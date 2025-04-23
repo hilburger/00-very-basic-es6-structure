@@ -32,6 +32,8 @@ function createCube() {
     // Gib dem WÜrfel eine leichte anfängliche Rotation für eine interessante Ansicht
     // Rotation wird in Radiant angegeben (um x, y, z Achse)
     cube.rotation.set(-0.5, -0.1, 0.8)
+
+    return cube
 }
 
 export { createCube }
