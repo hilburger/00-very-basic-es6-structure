@@ -2,3 +2,5 @@
 .vscode/
 
 node_modules/
+
+src/World/.DS_Store
