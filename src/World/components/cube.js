@@ -12,7 +12,7 @@ function createCube() {
     
     // 2. Textur laden: Lädt das Bild, das auf den Würfel gelegt werden soll
     const textureLoader = new TextureLoader()
-    const texture = textureLoader.load('/textures/uv_grid_opengl.jpg')
+    const texture = textureLoader.load('/textures/uv_grid_opengl_1k.webp')
     // Der Pfad '/textures/uv_grid_opengl.jpg' verweist auf die Datei
     // im '/publich/textures'-Ordner (Vire stellt 'public' im Root bereit)
 
