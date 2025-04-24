@@ -9,6 +9,7 @@ function createScene() {
     scene.background = new Color('skyblue')
 
     // Gibt die erstellte Szene zurück, damit sie in der World.js verwendet werden kann
+    return scene
 }
 
 export { createScene }

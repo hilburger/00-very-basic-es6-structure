@@ -13,14 +13,14 @@ function createLights() {
 
     // Fill Light (Aufhelllicht): Mildert harte Schatten des Hauptlichts
     // Kommt von schräg oben links, ist schwächer
-    const fillLight = new DirectionalLight('white, 1')
+    const fillLight = new DirectionalLight('white', 1)
     fillLight.position.set(-10, 10, 5)
     lights.push(fillLight)
 
     // Back Light (Galgenlicht/Konturlicht): Beleuchtet das Objekt von hinten 
     // Trennt es vom Hintergrund und erzeugt einen Lichtsaum (Rim Light)
     const backLight = new DirectionalLight('white', 1.5)
-    backLight.position(0, 5, -10)
+    backLight.position.set(0, 5, -10)
     lights.push(backLight)
 
     // Ambient Light (Umgebungslicht): Gibt der gesamten Szene eine Grundhelligkeit

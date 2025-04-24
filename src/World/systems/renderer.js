@@ -11,7 +11,7 @@ function createRenderer() {
 
     // Für das Standardbeispiel reichen Standardeinstellungen. 
     // Beispiel für Farbmanagement: 
-    renderer.outputColorSpace = sRGBColorSpace
+    renderer.outputColorSpace = 'srgb'
 
     return renderer
 }

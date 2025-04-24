@@ -24,9 +24,9 @@ class World {
     // Der Constructor nimmt den HT;L-Container (ein DOM-Element) entgegen
     constructor(container) {
         // 1. Erstelle die Kernkomponenten durch Aufruf der importierten Funktionen/Klassen
-        camera = createCamera
-        scene = createScene
-        renderer = createRenderer
+        camera = createCamera()
+        scene = createScene()
+        renderer = createRenderer()
 
         // 2. Füge das <canvas>-Element des Renderers zum HTML-Container hinzu
         container.append(renderer.domElement)
@@ -57,7 +57,7 @@ class World {
 
         // 6. Erstelle den Resizer, um auf Größenänderungen des Viewports/Fensters zu reagieren
         // Wir brauchen keine Referenz darauf zu speichern, da er im Hintergrund auf Events lauscht
-        const Resizer = new Resizer(container, camera, renderer)
+        const resizer = new Resizer(container, camera, renderer)
 
         // 7. Erstelle den Animations-Loop
         loop = new Loop(camera, scene, renderer)
