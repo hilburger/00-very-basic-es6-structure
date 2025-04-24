@@ -9,10 +9,12 @@ body {
     width: 100%;  /* Breite relativ zur umgebenden Seite */
     /* max-width: 800px; /* Maximale Breite */
     height: 400px; /* Feste Höhe */
-    margin: 1em auto; /* Zentriert den Container horizontal */
+    /* Alt: margin: 1em auto; */ /* Zentriert den Container horizontal */
+    margin-block: 1em; /* Modernere Schreibweise für oben/unten */
     border: 1px solid #ccc;
     background-color: #fff; /* Hintergrund für den Container */
     position: relative; /* Wichtig für das Canvas-Element */
+    min-width: 0;
 }
 
 canvas {
@@ -24,6 +26,7 @@ canvas {
 
 .grid-container {
     display: grid;
-    grid-template-columns: 3fr 1fr; /* 3:1 Verhältnis */
+    /* grid-template-columns: 3fr 1fr; */ /* 3:1 Verhältnis */
+    grid-template-columns: repeat(auto-fit, minmax(278px, 1fr));
     column-gap: 1rem;
 }
