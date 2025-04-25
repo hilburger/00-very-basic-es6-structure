@@ -1,5 +1,4 @@
 import { createCamera } from './components/camera.js'
-import { createCube } from './components/cube.js'
 import { createLights } from './components/lights.js'
 import { createPlane } from './components/plane.js'
 import { createScene } from './components/scene.js'
@@ -11,6 +10,10 @@ import { Loop } from './systems/Loop.js'
 // Importiere OrbitControls aus dem 'examples'-Verzeichnis von Three.js
 // Vite/npm kümmert sich darum, den richtigen Pfad aufzulösen
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+
+// -- Importiere Ladefunktionen und Cube ---
+import { loadGltf } from './systems/assetLoader.js'
+import { createCube } from './components/cube.js' // Importieren, aber nicht im Constructor aufrufen
 
 // Deklariert Variablen für Kernkomponenten im Modul-Scope
 // Sie sind nicht direkt von außen zugänglich ("privat" für dieses Modul)
@@ -50,10 +53,9 @@ class World {
         // Der Spread-Operator '(...)' fügt alle Elemente des lights-Arrays einzeln hinzu
         scene.add(...lights)
 
-        // 5. Erstelle die 3D-Objekte (Würfel, Bodenplatte/-ebene) und füge sie der Szene hinzu
+        // 5. Erstelle die 3D-Objekte (Bodenplatte/-ebene) und füge sie der Szene hinzu
         const plane = createPlane()
-        const cube = createCube()
-        scene.add(plane, cube)
+        scene.add(plane)
 
         // 6. Erstelle den Resizer, um auf Größenänderungen des Viewports/Fensters zu reagieren
         // Wir brauchen keine Referenz darauf zu speichern, da er im Hintergrund auf Events lauscht
@@ -71,15 +73,67 @@ class World {
             // loop.updatables.push(cube)
     }
 
+    // --- Asynchrone Methode zum Initialisieren/Laden von Assets ---
+    async init(config) {
+        console.log('World init gestartet mit Config:', config)
+        // config sollte das objekt sein, das wir in main.js definieren!
+        // z.B. { cubeTexture: '...', duckModel: '...', helmetModel: '... }
+
+        // Lade den Würfel (jetzt async)
+        // Übergibt die Konfiguration an CreateCube, damit es die Textur-URL kennt
+        try {
+            const cube = await createCube({ cubeTextureUrl: config.cubeTexture })
+            scene.add(cube)
+            console.log('Würfel zur Szene hinzugefügt')
+        } catch(error) {
+            console.error('Würfel konnte nicht erstellt/geladen werden', error)
+        }
+
+        // Lade das Enten-Modell (GLB)
+        if (config.duckModel) {
+            try {
+                const duck = await loadGltf(config.duckModel)
+                // Modell leicht verschieben und skalieren, damit es nicht im Würfel/Helm steckt
+                duck.position.set(-3, 0.5, 0)
+                duck.scale.set(1, 1, 1)
+                scene.add(duck)
+                console.log('Ente zur Szene hinzugefügt')
+            } catch(error){
+                console.error('Ente konnte nicht geladen werden', error)
+            } 
+        }
+
+        // Lade das Helm-Modell (GLTF + externe Textur)
+        if (config.helmetModel) {
+            try { 
+                const helmet = await loadGltf(config.helmetModel)
+                // GLTF-Loader lädt externe Texturen automatisch, wenn Pfade stimmen!
+                helmet.position.set(3, 1.5, 0)
+                // Optonal: Skalirung für Helm anpassen, falls er zu groß/klein ist
+                    // helmet.scale(1, 1, 1)
+                scene.add(helmet)
+                console.log('Helm zur Szene hinzugefügt')
+            } catch(error){
+                console.error('Helm konnte nicht geladen werden', error)
+            }
+        }
+        console.log('World Init abgeschlossen.')
+        // Hier könnte man z.B. einen Ladebildschirm ausblenden
+    }
+
     render() {
+        // Kleine SIcherheitsprüfung
+        if( !renderer || scene || camera) return
         renderer.render(scene, camera)
     }
     
     start() {
+        if (!loop) return
         loop.start()
     }
     
     stop() {
+        if (!loop) return
         loop.stop()
     }
 }

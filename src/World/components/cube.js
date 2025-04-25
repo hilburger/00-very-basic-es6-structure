@@ -5,16 +5,24 @@ import {
     TextureLoader
 } from 'three'
 
-function createCube() {
+// --- Importiere die Ladefunktion ---
+import { loadTexture } from '../systems/assetLoader.js'
+
+async function createCube(config) {
     // 1. Geometrie: Definiert die Form des Objekts
     // BoxGeometry erstellt einen einfchen Würfel mit Breite, Höhe und Tiefe = 2
     const geometry = new BoxGeometry(2, 2, 2)
-    
-    // 2. Textur laden: Lädt das Bild, das auf den Würfel gelegt werden soll
-    const textureLoader = new TextureLoader()
-    const texture = textureLoader.load('/textures/uv_grid_opengl_1k.webp')
-    // Der Pfad '/textures/uv_grid_opengl.jpg' verweist auf die Datei
-    // im '/publich/textures'-Ordner (Vire stellt 'public' im Root bereit)
+
+    // 2. Textur über den Loader laden
+    // Wir erwarten die URL in der Konfiguration
+    const textureUrl = config?.cubeTextureUrl || '/textures/uv_grid_opengl_1k.webp' //Fallback
+    const texture = await loadTexture(textureUrl)
+
+        // 2. ALT: Textur laden: Lädt das Bild, das auf den Würfel gelegt werden soll
+        // const textureLoader = new TextureLoader()
+        // const texture = textureLoader.load('/textures/uv_grid_opengl_1k.webp')
+        // Der Pfad '/textures/uv_grid_opengl.jpg' verweist auf die Datei
+        // im '/publich/textures'-Ordner (Vire stellt 'public' im Root bereit)
 
     // 3. Materil: Definiert das Aussehen der Oberfläche (Farbe, Textur, Glanz etc.)
     // MeshStandardMaterisl ist ein physikalisch basiertes Material, das gut auf Lichter reagiert
