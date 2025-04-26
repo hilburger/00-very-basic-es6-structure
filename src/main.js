@@ -1,13 +1,36 @@
 // Importiert die zentrale World-Klasse
 import { World } from './World/World.js'
 
-// --- Konfiguration für Assets ---
-const assetsToLoad = {
-    cubeTexture: '/textures/uv_grid_opengl_1k.webp', 
-    duckModel: '/models/duck/glb/Duck.glb', 
-    helmetModel: '/models/DamagedHelmet/gltf/DamagedHelmet.gltf'
-    // Hier können später mehr optionen stehen (Skalierung, Position etc.)
-}
+// --- Detaillierte Szenen-Konfiguration ---
+const sceneConfig = [
+    {
+        type: 'cube', // Eindeutiger Typ, damit wir wissen, was zu tun ist
+        name: 'Mein Würfel', // Optionaler Name für Debugging oder sptere Interaktion
+        assetUrl: '/textures/uv_grid_opengl_1k.webp', // Pfad zur Textur
+        position: { x: 0, y: 1.7, z: -1 }, // Startposition
+        rotation: { x: -0.5, y: 0, z: 0.8 }, // Startrotation
+        scale: { x: 1, y: 1, z: 1 } // Startskalierung (optional, 1 ist Standard)
+    },
+    {
+        type: 'gltf', // Typ ffür GLTF/GLB-Modelle
+        name: 'Ente',
+        assetUrl: '/models/duck/glb/Duck.glb', // Pfad zu Modell
+        position: { x: -3, y: -0.15, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.5, y: 1.5, z: 1.5 }
+    },
+    {
+        type: 'gltf', 
+        name: 'Helm',
+        assetUrl: '/models/DamagedHelmet/gltf/DamagedHelmet.gltf',
+        position: { x: 3, y: 1.5, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 1.2, z: 1.2 }
+    }
+    // Hier können später auch Lichter, Kameras etc. definiert werden: 
+    // { type: 'ambientLight', color: 'white', intensity: 0.5 },
+    // { type: directionalLight', ... }
+]
 
 // Die Hauptfunktion unserer Anwendung
 async function main() {
@@ -16,11 +39,11 @@ async function main() {
 
     // 2. Erstelle eine Instanz der World-Klasse
     // Übergibt den gefundenen Container an den Constructor von World
-    const world = new World(container)
+    const world = new World(container) // Synchroner Teil
 
     // 3. Übergibt asynchron die Asset-Konfiguration an die World-Instanz
     try {
-        await world.init(assetsToLoad) // Warten bis Assets geladen sind
+        await world.init(sceneConfig) // Asynchroner Teil (Laden)
         world.start() // Erst dann den Loop starten
     } catch (error) {
         console.error('Initialisierung der 3D-Welt fehlgeschlagen', error)

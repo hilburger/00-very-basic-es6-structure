@@ -24,8 +24,14 @@ let loop
 let controls // OrbitControls
 
 class World {
-    // Der Constructor nimmt den HT;L-Container (ein DOM-Element) entgegen
+    // Instanzvariable für klickbare Objekte (wenn man Interaktionen vorbereiten will)
+    #clickableObjects
+
+    // Der Constructor nimmt den HTML-Container (ein DOM-Element) entgegen
     constructor(container) {
+
+        this.#clickableObjects = []
+
         // 1. Erstelle die Kernkomponenten durch Aufruf der importierten Funktionen/Klassen
         camera = createCamera()
         scene = createScene()
@@ -71,52 +77,123 @@ class World {
         // Hier können wir auch den Würfel oder andere Objekte hinzufügen, wenn sie animiert werden sollen: 
             // cube.tick = (delta) => { cube.rotation.y += delta } // Beispiel-Animation
             // loop.updatables.push(cube)
+
+        console.log('World synchron konstruiert.')
     }
 
     // --- Asynchrone Methode zum Initialisieren/Laden von Assets ---
-    async init(config) {
-        console.log('World init gestartet mit Config:', config)
-        // config sollte das objekt sein, das wir in main.js definieren!
-        // z.B. { cubeTexture: '...', duckModel: '...', helmetModel: '... }
+    async init(configItems) {
+        console.log('World init gestartet mit Config:', configItems)
+        // configItems sollte das Objekte sein, das wir in main.js definieren!
+        // z.B. 'Mein Würfel' oder 'Ente'
 
-        // Lade den Würfel (jetzt async)
-        // Übergibt die Konfiguration an CreateCube, damit es die Textur-URL kennt
-        try {
-            const cube = await createCube({ cubeTextureUrl: config.cubeTexture })
-            scene.add(cube)
-            console.log('Würfel zur Szene hinzugefügt')
-        } catch(error) {
-            console.error('Würfel konnte nicht erstellt/geladen werden', error)
-        }
+        // Array für Lade-Promises (für potentiell paralleles Laden)
+        const loadPromises = []
 
-        // Lade das Enten-Modell (GLB)
-        if (config.duckModel) {
-            try {
-                const duck = await loadGltf(config.duckModel)
-                // Modell leicht verschieben und skalieren, damit es nicht im Würfel/Helm steckt
-                duck.position.set(-3, 0.5, 0)
-                duck.scale.set(1, 1, 1)
-                scene.add(duck)
-                console.log('Ente zur Szene hinzugefügt')
-            } catch(error){
-                console.error('Ente konnte nicht geladen werden', error)
-            } 
-        }
+        // Gehe jedes Item in der Konfiguration durch
+        for (const item of configItems) {
+            // Erstelle ein Promise für jedes zu ladende/erstellende Objekt
+            const loadPromise = ( async () => { // Async IIFE für await im Loop
+                let loadedObject = null
+                try {
+                    // Entscheide basierend auf dem Typ, was zu tun ist
+                    switch (item.type) {
+                        case 'cube':
+                            // Rufe createCube auf, übergebe NUR die relevanten Infos für DIESES Item
+                            loadedObject = await createCube({ cubeTextureUrl: item.assetUrl })
+                            console.log(`Objekt '${item.name || 'Cube'}' erstellt.`)
+                            break // Wichtig!
 
-        // Lade das Helm-Modell (GLTF + externe Textur)
-        if (config.helmetModel) {
-            try { 
-                const helmet = await loadGltf(config.helmetModel)
-                // GLTF-Loader lädt externe Texturen automatisch, wenn Pfade stimmen!
-                helmet.position.set(3, 1.5, 0)
-                // Optonal: Skalirung für Helm anpassen, falls er zu groß/klein ist
-                    // helmet.scale(1, 1, 1)
-                scene.add(helmet)
-                console.log('Helm zur Szene hinzugefügt')
-            } catch(error){
-                console.error('Helm konnte nicht geladen werden', error)
+                        case 'gltf': 
+                            // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
+                            loadedObject = await loadGltf(item.assetUrl)
+                            console.log(`Objekt '${item.name || 'GLTF'}' geladen.`)
+                            break
+
+                        // Hier können später weitere Typen hinzugefügt werden
+                        // --- Zukünftig denkbare Erweiterung ---
+                        // case 'ambientLight':
+                        //     loadedObject = createAmbientLight(item.color, item.intensity) // Angenommen, es gäde ein createAmbientLight
+                        //     console.log('AmbientLight erstellt')
+                        //     break
+                        // case 'directionalLight':
+                        //  //...
+                        //    // break
+
+                        default:
+                            console.warn(`Unbekannter Objekttyp in Konfiguration: ${item.type}`)
+                    }
+
+                    // Wenn ein Objekt erfolgreich geladen/erstellt wurde
+                    if (loadedObject) {
+                        // Setze Name (falls in config definiert)
+                        if (item.name) {
+                            loadedObject.name = item.name
+                        }
+
+                        // Setze Position (falls in Config definiert)
+                        if (item.position) {
+                            loadedObject.position.set(
+                                item.position.x || 0, 
+                                item.position.y || 0, 
+                                item.position.z || 0
+                            )
+                        }
+
+                        // Setze Rotation (falls in Config definiert)
+                        if (item.rotation) {
+                            loadedObject.rotation.set(
+                                item.rotation.x || 0, 
+                                item.rotation.y || 0, 
+                                item.rotation.z || 0
+                            )
+                        }
+
+                        // Setze Skalierung (falls in Config definiert
+                        // Nutze standardwert 1, falls nichts angegeben
+                        if (item.scale) {
+                            loadedObject.scale.set(
+                                item.scale.x || 1, 
+                                item.scale.y || 1, 
+                                item.scale.z || 1
+                            )
+                        }
+
+                        // Füge das Objekt der Szene hinzu
+                        scene.add(loadedObject)
+
+                        // Optional: Füge es zur Liste der klickbaren Objekte hinzu
+                        // (Vorbereitung für spätere Interaktion)
+                        if (this.#clickableObjects) { // Sicherstellen, dass das Array existiert
+                            this.#clickableObjects.push(loadedObject)
+                        }
+
+                        console.log(`Objekt '${loadedObject.name || item.name}' zur Szene hinzugefügt und konfiguriert.`)
+                    }
+                } catch (error) {
+                    console.error(`Fehler beim Verarbeiten des Config-Items: `, item, error)
+                    // Wichtig: Hier das Promise nicht fehlschlagen lassen, damit Promise.all weiterläuft
+                    // Stattdessen könnte man null zurückgeben oder den Fehler anders behandeln
+                    return null // Signalisiert, dass dieses Item fehlgeschlagen ist
+                }
+            })() // Die async IIFE aufrufen
+
+            loadPromises.push(loadPromise) // Fügt das Promise zum Array hinzu
+        } // Ende der for ... of Schleife
+
+        // Warte, bis alle Lade-Promises abgeschlossen sind (auch fehlgeschlagene)
+        // Promise.all würde bei einem Fehler sofort abbrechen
+        // Promise.allSettled wartet auf alle, egal ob Erfolg oder Fehler
+        const results = await Promise.allSettled(loadPromises)
+        console.log('Alle Lade-Promises abgeschlossen', results)
+
+        // Optional: Prüfe results auf Fehler
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                console.error(`Fehler beim Laden von Item ${index} (${configItems[index]?.name || configItems[index]?.type}):`, result.reason)
             }
-        }
+        })
+        
         console.log('World Init abgeschlossen.')
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
     }
