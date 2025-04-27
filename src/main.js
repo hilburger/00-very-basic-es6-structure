@@ -34,12 +34,27 @@ const sceneConfig = [
 
 // Die Hauptfunktion unserer Anwendung
 async function main() {
+
+    // 0. --- Debug-Modus aus URL lesen ---
+    const urlParams = new URLSearchParams(window.location.search)
+    // Prüft, ob der Parameter 'debug' vorhanden ist(egal welcher Wert, z.B. ?debug oder ?debug=true)
+    const isDebugMode = urlParams.has('debug')
+
+    if (isDebugMode) {
+        // Eine klare Meldung in der Konsole, wenn der Debug-Modus aktiv ist
+        console.log(
+            '%cDEBUG MODE ACTIVATED',
+            'color: orange; background: black; font-size: 1.2em; padding: 2px 5px; font-weight: bold; border-radius: 3px;'
+        )
+    }
+    // --- Ende Debug-Check ---
+
     // 1. Finde den HTML-Container im DOM der index.html anhand seiner ID
     const container = document.querySelector('#scene-container')
 
     // 2. Erstelle eine Instanz der World-Klasse
-    // Übergibt den gefundenen Container an den Constructor von World
-    const world = new World(container) // Synchroner Teil
+    // Übergibt den gefundenen Container an den Constructor von World + Übergabe isDebugMode an den World constructor
+    const world = new World(container, isDebugMode) // Synchroner Teil    
 
     // 3. Übergibt asynchron die Asset-Konfiguration an die World-Instanz
     try {

@@ -12,6 +12,8 @@
         "vite": "^6.3.2"
     },
     "dependencies": {
+        "lil-gui": "^0.20.0",
+        "stats.js": "^0.17.0",
         "three": "^0.175.0"
     }
 }

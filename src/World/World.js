@@ -1,4 +1,4 @@
-import { Raycaster, Vector2 } from 'three'
+import { Raycaster, Vector2, AxesHelper, Color } from 'three' // AxesHelper und Color sind nur für Debugging
 import eventBus from './systems/EventBus.js'
 
 import { createCamera } from './components/camera.js'
@@ -18,6 +18,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { loadGltf } from './systems/assetLoader.js'
 import { createCube } from './components/cube.js' // Importieren, aber nicht im Constructor aufrufen
 
+// Debug-Tool-Imports (Innerhalb der Klasse, wo sie gebraucht werden oder oben)
+// Wir importieren sie hier oben, damit sie verfügbar sind
+import Stats from 'stats.js' // Für Performance-Statistiken
+import { GUI } from 'lil-gui'
+
 // Deklariert Variablen für Kernkomponenten im Modul-Scope
 // Sie sind nicht direkt von außen zugänglich ("privat" für dieses Modul)
 let camera
@@ -30,10 +35,15 @@ class World {
     #clickableObjects // Instanzvariable für klickbare Objekte (wenn man Interaktionen vorbereiten will)
     #raycaster // Instanzvariable für Raycasting
     #mouse // Für normalisierte Mauskoordinaten
+    // Variablen für Debug-Tools
+    #isDebugMode = false // Standardmäßig deaktiviert
+    #stats // Für Stats.js Instanz
+    #gui // Für lil-gui Instanz
+    #lights = [] // Privates Feld für Lichter deklarieren und initialisieren
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) entgegen
-    constructor(container) {
-
+    constructor(container, isDebugMode = false) {
+        this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#clickableObjects = []
 
         // 1. Erstelle die Kernkomponenten durch Aufruf der importierten Funktionen/Klassen
@@ -66,9 +76,9 @@ class World {
         // controls.maxPolarAngle = Math.PI * 0.5 // Verhindert, dass man untzer die Bodenplatte/-ebene schaut
 
         // 4. Erstelle die Lichter und füge sie zur Szene hinzu
-        const lights = createLights()
+        this.#lights = createLights()
         // Der Spread-Operator '(...)' fügt alle Elemente des lights-Arrays einzeln hinzu
-        scene.add(...lights)
+        scene.add(...this.#lights)
 
         // 5. Erstelle die 3D-Objekte (Bodenplatte/-ebene) und füge sie der Szene hinzu
         const plane = createPlane()
@@ -88,11 +98,73 @@ class World {
         // Hier können wir auch den Würfel oder andere Objekte hinzufügen, wenn sie animiert werden sollen: 
             // cube.tick = (delta) => { cube.rotation.y += delta } // Beispiel-Animation
             // loop.updatables.push(cube)
+        // Füge Stats zur Update-Schleife hinzu, WENN es existiert
+        if (this.#stats) {
+            loop.updatables.push(this.#stats)
+        }
+
+        // --- DEBUG-Tools Initialisierung (nur, wenn isDebugMode true ist) ---
+        if (this.#isDebugMode) {
+            this.#setupDebugTools(container)
+        }
+        // ---DEBUG-Tools ENDE ---
 
         // Interaktion/Listener einrichten
         this.#setupInteraction(container) // Methode aufrufen
 
         console.log('World synchron konstruiert.')
+    }
+
+    // --- Methode zum Einrichten der Debug-Tools ---
+    #setupDebugTools(container){
+        console.log('Setting up Debug Tools...')
+
+        // 1. Stats.js (FPS-Anzeige)
+        this.#stats = new Stats()
+        this.#stats.dom.style.position = 'absolute' // Positionieren
+        this.#stats.dom.style.left = '0px'
+        this.#stats.dom.style.top = '0px'
+        // Füge es dem Body hinzu, nicht zum Canvas-Container, damit es sichtbar bleibt
+        document.body.appendChild(this.#stats.dom)
+
+        // 2. AxesHelper (Koordinatenachsen im Ursprung)
+        const axesHelper = new AxesHelper(3) // Die Zahl gibt die Länge der Achsen an
+        scene.add(axesHelper)
+        console.log('AxesHelper zur Szene hinzugefügt.')
+
+        // 3. lil-gui (Grafische Benutzeroberfläche)
+        this.#gui = new GUI()
+        console.log('lil-gui Instanz erstellt.')
+
+        // Füge Beispiel-Controls hinzu: 
+        
+        // - Ordner für Szenen-Einstellungen
+        const sceneFolder = this.#gui.addFolder('Szene')
+        //   - Hintergrundfarbe ändern
+        const bgColor = { color: `#${scene.background.getHexString()}`} // Aktuelle Farbe holen
+        sceneFolder.addColor(bgColor, 'color').name('Hintergrund').onChange(value => {
+            scene.background.set(value) // Farbe bei Änderung setzen
+        })
+        sceneFolder.open() // Ordner standardmäßig öffnen
+
+        // - Ordner für Lichter (Beispiel: Umgebungslicht)
+        // Wir brauchen eine Referenz auf das Licht. Besser wäre Lichter zu verwalten.
+        // Quick & Dirty: Finden über den Typ Licht (nicht sehr robust!!!)
+        const ambientLight = this.#lights.find(light => light.isAmbientLight)
+        if (ambientLight) {
+            const lightFolder = this.#gui.addFolder('Beleuchtung')
+            lightFolder.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
+            // lightFolder.open()
+        }
+
+        // Wenn Objekte Namen haben, kann man sie auch hinzufügen (koplexer)
+        // Beispiel (wenn Ente geladen und 'Ente' heißt) 
+        // const duck = scene.getObjectByName('Ente')
+        // if (duck) {
+        //     const duckFolder = this.#gui.addFolder('Ente')
+        //     duckFolder.add(duck.position, 'x', -5, 5, 0.1).name('Position X')
+        //     // ... usw. für y, z, rotation, scale
+        // }
     }
 
     // Interaktion (Raycasting bei Klick) einrichten
@@ -328,7 +400,7 @@ class World {
 
     render() {
         // Kleine SIcherheitsprüfung
-        if( !renderer || scene || camera) return
+        if( !renderer || !scene || !camera) return
         renderer.render(scene, camera)
     }
     
