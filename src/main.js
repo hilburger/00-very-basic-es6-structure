@@ -4,6 +4,14 @@ import { World } from './World/World.js'
 // --- Detaillierte Szenen-Konfiguration ---
 const sceneConfig = [
     {
+        type: 'plane', 
+        name: 'Bodenplatte', 
+        size: { width: 10, height: 10 }, // Optional, nimmt sonst Defauult aus Plane.js
+        color: 'dimgrey', 
+        position: { x:0, y:0, z:0  }, // Startposition
+        // Rotation wird jetzt in der Plane-Klasse gesetzt!
+    },
+    {
         type: 'cube', // Eindeutiger Typ, damit wir wissen, was zu tun ist
         name: 'Mein Würfel', // Optionaler Name für Debugging oder sptere Interaktion
         assetUrl: '/textures/uv_grid_opengl_1k.webp', // Pfad zur Textur
