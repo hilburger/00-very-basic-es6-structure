@@ -15,8 +15,8 @@ import { Loop } from './systems/Loop.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 // -- Importiere Ladefunktionen und Cube ---
-import { loadGltf } from './systems/assetLoader.js'
-import { createCube } from './components/cube.js' // Importieren, aber nicht im Constructor aufrufen
+import { loadGltf, loadTexture } from './systems/assetLoader.js'
+import { Cube } from './components/Cube.js' // Eigene Klasse für Erstellung von Cubes mit Materialien und Texturen
 
 // Debug-Tool-Imports (Innerhalb der Klasse, wo sie gebraucht werden oder oben)
 // Wir importieren sie hier oben, damit sie verfügbar sind
@@ -256,9 +256,20 @@ class World {
                     // Entscheide basierend auf dem Typ, was zu tun ist
                     switch (item.type) {
                         case 'cube':
-                            // Rufe createCube auf, übergebe NUR die relevanten Infos für DIESES Item
-                            loadedObject = await createCube({ cubeTextureUrl: item.assetUrl })
-                            console.log(`Objekt '${item.name || 'Cube'}' erstellt.`)
+                            // 1. Textur zuerst laden
+                            let texture = null
+                            if (item.assetUrl) {
+                                texture = await loadTexture(item.assetUrl)
+                                console.log(`Textur für '${item.name || 'Cube'}' geladen.`)
+                            }
+
+                            // 2. Cube-Instanz erstellen und Konfiguration übergeben
+                            // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
+                            loadedObject = new Cube({
+                                ...item, // Kopiert alle Eigenschaften von item (name, size, color etc.)
+                                map: texture // Fügt die geladene Textur als 'map' hinzu
+                            })
+                            console.log(`Objekt '${item.name || 'Cube'}' instanziert.` )
                             break // Wichtig!
 
                         case 'gltf': 

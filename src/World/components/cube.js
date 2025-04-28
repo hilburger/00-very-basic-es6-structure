@@ -2,46 +2,60 @@ import {
     BoxGeometry, 
     Mesh, 
     MeshStandardMaterial, 
-    TextureLoader
+    Texture // Optional: Für Typ-Hinweise, falls gewünscht
 } from 'three'
+// Wichtig: Da wir eine Komponenten-Klasse heiraus gemacht haben, 
+// wird der Loader hier NICHT mehr direkt importiert/genutzt!
+// War: import { loadTexture } from '..system/assetLoader.js'
 
-// --- Importiere die Ladefunktion ---
-import { loadTexture } from '../systems/assetLoader.js'
+class Cube extends Mesh { // Erbt von THREE.Mesh
+    /**
+     * Erstellt einen neuen Würfel.
+     * @param {object} config - Konfigurationsobjekt
+     * @param {number} [config.size=2] - Kantenlänge des Würfels
+     * @param {string} [config.color='#ffffff'] - Farbe, falls keine Textur verwendet wird.
+     * @param {Texture} [config.map=null] - Eine bereits VORGELADENE Textur für das Material.
+     * @param {string} [config.name='Cube'] - Name des Objekts
+     */
+    
+    constructor(config = {}) {
+        // 1. Geometrie erstellen
+        const size = config.size // Standardgröße 2, falls nicht in config angegeben
+        const geometry = new BoxGeometry(size, size, size)
 
-async function createCube(config) {
-    // 1. Geometrie: Definiert die Form des Objekts
-    // BoxGeometry erstellt einen einfchen Würfel mit Breite, Höhe und Tiefe = 2
-    const geometry = new BoxGeometry(2, 2, 2)
+        // 2. Material erstellen
+        const materialConfig = {}
+        if (config.map) {
+            materialConfig.map = config.map // Verwende die übergebene Txtur
+        } else {
+            materialConfig.color = config.color || '#ffffff' // Standardfarbe weiß
+        }
+        const material = new MeshStandardMaterial(materialConfig)
 
-    // 2. Textur über den Loader laden
-    // Wir erwarten die URL in der Konfiguration
-    const textureUrl = config?.cubeTextureUrl || '/textures/uv_grid_opengl_1k.webp' //Fallback
-    const texture = await loadTexture(textureUrl)
+        // 3. super() aufrufen (Konstuktor der Basisklasse THREE.Mesh)
+        // Übergibt die erstellte Geometrie und das Material an den Mesh-Konstruktor
+        super(geometry, material)
 
-        // 2. ALT: Textur laden: Lädt das Bild, das auf den Würfel gelegt werden soll
-        // const textureLoader = new TextureLoader()
-        // const texture = textureLoader.load('/textures/uv_grid_opengl_1k.webp')
-        // Der Pfad '/textures/uv_grid_opengl.jpg' verweist auf die Datei
-        // im '/publich/textures'-Ordner (Vire stellt 'public' im Root bereit)
+        // 4. Namen setzen
+        this.name = config.name || 'Cube' // Setze den Namen des Mesh-Objekts
 
-    // 3. Materil: Definiert das Aussehen der Oberfläche (Farbe, Textur, Glanz etc.)
-    // MeshStandardMaterisl ist ein physikalisch basiertes Material, das gut auf Lichter reagiert
-    const material = new MeshStandardMaterial({
-        map: texture, //weist die geladene Textur als Haupttextur (Licht) zu
-    })
+        // 5. Optional: Spezifische Eigenschaften oder Methoden für Cube
+        // z.B. this.isInteractive = true
+        // oder spätere Methoden, wie update(delta), onClick() etc.
 
-    // 4. Mesh: Kombiniert Geometrie und Material zu einem renderbaren 3D-Objekt
-    const cube = new Mesh(geometry, material)
+        console.log(`Cube Instanz '${this.name}' erstellt.`)
+    }
 
-    // Positioniert den Würfel leicht nach oben (entlang der Y-Achse)
-    // damit er auf der Bodenplatte liegt
-    cube.position.y = 1.1
+    // --- Beispiel für eine spätere Methode ---
+    // update(delta) {
+    //   // Animationslogik für diesen Würfel
+    //   this.rotation.y += delta;
+    // }
 
-    // Gib dem WÜrfel eine leichte anfängliche Rotation für eine interessante Ansicht
-    // Rotation wird in Radiant angegeben (um x, y, z Achse)
-    cube.rotation.set(-0.5, -0.1, 0.8)
-
-    return cube
+    // --- Beispiel für eine spätere Methode ---
+    // onClick(eventData) {
+    //   console.log(`Cube '${this.name}' wurde geklickt!`, eventData);
+    // }
 }
 
-export { createCube }
+export { Cube }
