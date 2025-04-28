@@ -8,7 +8,7 @@ import {
 class Plane extends Mesh { // Erbt von THREE.Mesh
     /**
      * Erstellt eine neue Bodenplatte (Plane).
-     * Setzt die Rotation automatisch, um flach zu liegen. 
+     * Setzt die Rotation automatisch, um flach zu liegen (Boden). 
      * @param {object} config - Konfigurationsobjekt
      * @param {object} [config.size={width: 10, height: 10}] - Breite und Tiefe der Ebene
      * @param {string} [config.color='darkgrey'] - Farbe der Ebene
