@@ -3,7 +3,6 @@ import eventBus from './systems/EventBus.js'
 
 import { createCamera } from './components/camera.js'
 import { createLights } from './components/lights.js'
-import { createPlane } from './components/plane.js'
 import { createScene } from './components/scene.js'
 
 import { createRenderer } from './systems/renderer.js'
@@ -15,8 +14,9 @@ import { Loop } from './systems/Loop.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 // -- Importiere Ladefunktionen und Cube ---
-import { loadGltf } from './systems/assetLoader.js'
-import { createCube } from './components/cube.js' // Importieren, aber nicht im Constructor aufrufen
+import { loadGltf, loadTexture } from './systems/assetLoader.js'
+import { Cube } from './components/Cube.js' // Eigene Klasse für Erstellung von Cubes mit Materialien und Texturen
+import { Plane } from './components/Plane.js' // Plane-Klasse für Bodenplatte
 
 // Debug-Tool-Imports (Innerhalb der Klasse, wo sie gebraucht werden oder oben)
 // Wir importieren sie hier oben, damit sie verfügbar sind
@@ -80,9 +80,8 @@ class World {
         // Der Spread-Operator '(...)' fügt alle Elemente des lights-Arrays einzeln hinzu
         scene.add(...this.#lights)
 
-        // 5. Erstelle die 3D-Objekte (Bodenplatte/-ebene) und füge sie der Szene hinzu
-        const plane = createPlane()
-        scene.add(plane)
+        // 5. Erstelle die 3D-Objekte und füge sie der Szene hinzu
+        // -- Momentan keine --
 
         // 6. Erstelle den Resizer, um auf Größenänderungen des Viewports/Fensters zu reagieren
         // Wir brauchen keine Referenz darauf zu speichern, da er im Hintergrund auf Events lauscht
@@ -256,10 +255,27 @@ class World {
                     // Entscheide basierend auf dem Typ, was zu tun ist
                     switch (item.type) {
                         case 'cube':
-                            // Rufe createCube auf, übergebe NUR die relevanten Infos für DIESES Item
-                            loadedObject = await createCube({ cubeTextureUrl: item.assetUrl })
-                            console.log(`Objekt '${item.name || 'Cube'}' erstellt.`)
+                            // 1. Textur zuerst laden
+                            let texture = null
+                            if (item.assetUrl) {
+                                texture = await loadTexture(item.assetUrl)
+                                console.log(`Textur für '${item.name || 'Cube'}' geladen.`)
+                            }
+
+                            // 2. Cube-Instanz erstellen und Konfiguration übergeben
+                            // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
+                            loadedObject = new Cube({
+                                ...item, // Kopiert alle Eigenschaften von item (name, size, color etc.)
+                                map: texture // Fügt die geladene Textur als 'map' hinzu
+                            })
+                            console.log(`Objekt '${item.name || 'Cube'}' instanziert.` )
                             break // Wichtig!
+
+                        case 'plane':
+                            // Erstelle eine Instanz der Plane-Klasse, übergib das item als config
+                            loadedObject = new Plane(item)
+                            console.log(`Objekt '${item.name || 'Plane'}' erstellt.`)
+                            break
 
                         case 'gltf': 
                             // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
