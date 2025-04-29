@@ -1,20 +1,25 @@
-import { Raycaster, Vector2, AxesHelper, Color } from 'three' // AxesHelper und Color sind nur für Debugging
+// src/World/World.js
+
+// THREE Kern-Klassen, die wir direkt instanziieren werden:
+import { Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer} from 'three' // AxesHelper und Color sind nur für Debugging
+
+// EventBus Singleton
 import eventBus from './systems/EventBus.js'
 
-import { createCamera } from './components/camera.js'
+// Factory für Lichter (bleibt extern)
 import { createLights } from './components/lights.js'
-import { createScene } from './components/scene.js'
 
-import { createRenderer } from './systems/renderer.js'
+// System-Klassen
 import { Resizer } from './systems/Resizer.js'
 import { Loop } from './systems/Loop.js'
 
 // Importiere OrbitControls aus dem 'examples'-Verzeichnis von Three.js
 // Vite/npm kümmert sich darum, den richtigen Pfad aufzulösen
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-
-// -- Importiere Ladefunktionen und Cube ---
+// -- Importiere Ladefunktionen  ---
 import { loadGltf, loadTexture } from './systems/assetLoader.js'
+
+// Komponenten-Klassen
 import { Cube } from './components/Cube.js' // Eigene Klasse für Erstellung von Cubes mit Materialien und Texturen
 import { Plane } from './components/Plane.js' // Plane-Klasse für Bodenplatte
 
@@ -23,95 +28,145 @@ import { Plane } from './components/Plane.js' // Plane-Klasse für Bodenplatte
 import Stats from 'stats.js' // Für Performance-Statistiken
 import { GUI } from 'lil-gui'
 
-// Deklariert Variablen für Kernkomponenten im Modul-Scope
-// Sie sind nicht direkt von außen zugänglich ("privat" für dieses Modul)
-let camera
-let renderer
-let scene
-let loop
-let controls // OrbitControls
+// Globale Variablen für geteilte GUI (bleibt außerhalb der Klasse)
+let sharedGui = null
+let guiRefCount = 0
 
 class World {
-    #clickableObjects // Instanzvariable für klickbare Objekte (wenn man Interaktionen vorbereiten will)
+    #camera
+    #renderer
+    #scene
+    #loop
+    #controls
+    #resizer
+    #lights = [] // Privates Feld für Lichter deklarieren und initialisieren
+    #clickableObjects = [] // Instanzvariable für klickbare Objekte (wenn man Interaktionen vorbereiten will)
     #raycaster // Instanzvariable für Raycasting
     #mouse // Für normalisierte Mauskoordinaten
+    #container // Wird im Konsturktor gesetzt
+
     // Variablen für Debug-Tools
-    #isDebugMode = false // Standardmäßig deaktiviert
+    #isDebugMode = false // Initialisiert, standardmäßig deaktiviert
     #stats // Für Stats.js Instanz
     #gui // Für lil-gui Instanz
-    #lights = [] // Privates Feld für Lichter deklarieren und initialisieren
+    #axesHelper
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) entgegen
     constructor(container, isDebugMode = false) {
+        this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
+        const instanceIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
+        console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
+
+        // --- Instanzfelder initialisieren ---
         this.#clickableObjects = []
+        this.#lights = [] // Initialisiere leeres Array
 
-        // 1. Erstelle die Kernkomponenten durch Aufruf der importierten Funktionen/Klassen
-        camera = createCamera()
-        scene = createScene()
-        renderer = createRenderer()
+        // 1. Erstelle die Kernkomponenten als Instanzvariablen via interner Methoden
+        this.#scene = this.#createScene()
+        this.#camera = this.#createCamera() // Nutzt jetzt this.#container für Aspect Ratio
+        this.#renderer = this.#createRenderer()
 
-        // Raycasting initialisieren
+        // 2. Raycasting für diese Instanz initialisieren
         this.#raycaster = new Raycaster()
         this.#mouse = new Vector2() // Initialisiere den 2D-Vektor
 
-        // 2. Füge das <canvas>-Element des Renderers zum HTML-Container hinzu
-        container.append(renderer.domElement)
+        // 3. Canvas DIESER Instanz zum Container hinzufügen
+        this.#container.append(this.#renderer.domElement)
 
-        // 3. Erstelle die OrbitControls
+        // 4. OrbitControls für DIESE Instanz erstellen
+        // Wichtig: Übergibt jetzt Instanzvariablen!
         // Sie benötigen die Kamera und das COM-Element (canvas), auf das sie hören sollen
-        controls = new OrbitControls(camera, renderer.domElement)
-
+        this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement)
         // Aktiviere Dämpfung für sanfteres Auslaufen der Bewegung beim Loslassen der Maus
-        controls.enableDamping = true
-        controls.dampingFactor = 0.05 // Stärke der Dämpfung
+        this.#controls.enableDamping = true
+        this.#controls.dampingFactor = 0.05 // Stärke der Dämpfung
         // WICHTIG: Damit Raycasting und OrbitControls nicht kollidieren, 
         // müssen die Controls wissen, wann sie *nicht* reagieren sollen (z.B. während Dragging)
         // Das ist hier noch nicht implementiert, aber für ein einfaches Klicken rechts erstmal. 
 
-        // Weitere nützliche OrbitControls-Settings (optional): 
-        // controls.screenSpacePanning = false // Verhindert seltsames Panning-Verhalten
-        // controls.minDistance = 2 // Minimaler Zoom-Abstand
-        // controls.maxDistance = 15 // Maximaler Zoom-Abstand
-        // controls.maxPolarAngle = Math.PI * 0.5 // Verhindert, dass man untzer die Bodenplatte/-ebene schaut
+            // Weitere nützliche OrbitControls-Settings (optional): 
+            // this.#controls.screenSpacePanning = false // Verhindert seltsames Panning-Verhalten
+            // this.#controls.minDistance = 2 // Minimaler Zoom-Abstand
+            // this.#controls.maxDistance = 15 // Maximaler Zoom-Abstand
+            // this.#controls.maxPolarAngle = Math.PI * 0.5 // Verhindert, dass man untzer die Bodenplatte/-ebene schaut
 
-        // 4. Erstelle die Lichter und füge sie zur Szene hinzu
-        this.#lights = createLights()
+        // 5. Animations-Loop für DIESE Instanz erstellen
+        this.#loop = new Loop(this.#camera, this.#scene, this.#renderer)
+        // 5. b) Füge Controls DIESER Instanz zum Loop hinzu
+            // OrbitControls müssen aktualisiert werden, besonders, wenn Damping aktiviert ist
+        this.#loop.updatables.push(this.#controls)
+        
+        // 6. Resizer für DIESE Instanz hinzufügen, um auf Größenänderungen des Viewports/Fensters zu reagieren
+        // Wichtig: Übergibt jetzt Instanzvariablen!
+        this.#resizer = new Resizer(this.#container, this.#camera, this.#renderer)
+
+        // 7. Lichter für DIESE Instanz erstellen und hinzufügen
+        this.#lights = createLights() // createLights bleibt externe Funktion
         // Der Spread-Operator '(...)' fügt alle Elemente des lights-Arrays einzeln hinzu
-        scene.add(...this.#lights)
+        this.#scene.add(...this.#lights) // Füge zur Instanz-Szene hinzu
 
-        // 5. Erstelle die 3D-Objekte und füge sie der Szene hinzu
-        // -- Momentan keine --
+        // 8. Erstelle die 3D-Objekte und füge sie der DIESER Instanz hinzu ---
+        
+        // Ebene für DIESE Instanz hinzufügen
+        const plane = new Plane() // Erstellt Instanz der TNT-Plane-Klasse
+        this.#scene.add(plane) // Füge zur Instanz-Szene hinzu
 
-        // 6. Erstelle den Resizer, um auf Größenänderungen des Viewports/Fensters zu reagieren
-        // Wir brauchen keine Referenz darauf zu speichern, da er im Hintergrund auf Events lauscht
-        const resizer = new Resizer(container, camera, renderer)
+            // Optional: Füge Ebene zu klickbaren Objekten hinzu
+            // this.#clickableObjects.push(plane)
+            // console.log(`Objekt '${plane.name || 'Plane'}' zu clickableObjects hinzugefügt.`)
 
-        // 7. Erstelle den Animations-Loop
-        loop = new Loop(camera, scene, renderer)
-
-        // 8. Registriere Objekte, die im Loop aktualisiert werden müssen
-        // OrbitControls müssen aktualisiert werden, besonders, wenn Damping aktiviert ist
-        loop.updatables.push(controls)
-
-        // Hier können wir auch den Würfel oder andere Objekte hinzufügen, wenn sie animiert werden sollen: 
+        // Veraltet, da noch nicht an diese Instanz gebunden: 
+            // Hier können wir auch den Würfel oder andere Objekte hinzufügen, wenn sie animiert werden sollen: 
             // cube.tick = (delta) => { cube.rotation.y += delta } // Beispiel-Animation
             // loop.updatables.push(cube)
-        // Füge Stats zur Update-Schleife hinzu, WENN es existiert
-        if (this.#stats) {
-            loop.updatables.push(this.#stats)
-        }
 
-        // --- DEBUG-Tools Initialisierung (nur, wenn isDebugMode true ist) ---
+        // 9. --- DEBUG-Tools Initialisierung (nur, wenn this.#isDebugMode true ist) ---
+        // Erfolgt NACHDEM Szene, Lichter etc. existieren
         if (this.#isDebugMode) {
-            this.#setupDebugTools(container)
+            this.#setupDebugTools() /// Ruft die interne Methode auf
+            if (this.#stats) { // #stats wird in #setupDebugTools initialisiert
+                this.#loop.updatables.push(this.#stats) // Füge zum Instanz-Loop hinzu
+            }
         }
         // ---DEBUG-Tools ENDE ---
 
-        // Interaktion/Listener einrichten
-        this.#setupInteraction(container) // Methode aufrufen
+        // Interaktion/Listener für DIESE Instanzeinrichten
+        this.#setupInteraction() // Methode jetzt interne Methode auf
 
-        console.log('World synchron konstruiert.')
+        console.log(`[World${instanceIdLog}] Konstruktor abgeschlossen.`)
+    }
+
+    // --- Private Helper-Methoden zum Erstellen von Kern-Komponenten ---
+    #createCamera() {
+        // Nutzt die Breite/Höhe des spezifischen Containers dieser Instanz
+        const aspectRatio = this.#container.clientWidth / this.#container.clientHeight
+        const camera = new PerspectiveCamera(
+            75,     // FOV
+            aspectRatio, 
+            0.1,    // near
+            100     // far
+        )
+        // Setze Standard-Kameraposition für jede Instanz
+        camera.position.set(0, 1.5, 5)
+        return camera
+    }
+
+    #createScene() {
+        const scene = new Scene()
+        scene.background = new Color(0xabcdef)
+        return scene
+    }
+
+    #createRenderer() {
+        const renderer = new WebGLRenderer({
+            antialias: true, 
+            // Optional: Wenn Performance auf Mobilgeräten wichtig ist
+            // powerPreferences: 'high-performance'
+        })
+        renderer.outputColorSpace = 'srgb' // Wichtiges Farbsetting
+        // Größe wird durch Resizer gesetzt, nicht hier
+        return renderer
     }
 
     // --- Methode zum Einrichten der Debug-Tools ---
@@ -186,11 +241,11 @@ class World {
             if (intersects.length > 0) {
                 // Treffer! Nimm das vorderste Objekt.
                 const intersection = intersects[0]
-                const clickedOject = intersection.object
+                const clickedObject = intersection.object
 
                 // Finde das Top-Level-Objekt, das wir zu #clickableObjects hinzugefügt haben
                 // (nützlich, wenn man auf ein Kind-Mesh einer Gruppe klickt)
-                let topLevelClickedObject = clickedOject
+                let topLevelClickedObject = clickedObject
                 while (topLevelClickedObject.parent && topLevelClickedObject.parent !== scene) {
                     // Prüfen, ob ein Vorfahre in clickableObjects ist
                     if (this.#clickableObjects.includes(topLevelClickedObject.parent)) {
@@ -208,7 +263,7 @@ class World {
 
                     // Sicherheits-Check gegen Endlosschleife (sollte nicht passieren)
                     if (topLevelClickedObject === scene) {
-                        topLevelClickedObject = clickedOject // Fallback zum direkt getroffenen
+                        topLevelClickedObject = clickedObject // Fallback zum direkt getroffenen
                         break
                     }
                 }
@@ -218,7 +273,7 @@ class World {
                     topLevelClickedObject = topLevelClickedObject // Fallback falls die vorige Logik fehlschlägt
                 }
 
-                console.log('Raycast hit:', clickedOject) // Das tatsächlich getroffene Mesh/etc.
+                console.log('Raycast hit:', clickedObject) // Das tatsächlich getroffene Mesh/etc.
                 console.log('Top-Level Clickable', topLevelClickedObject)
 
                 // 4. Event über den Event Bus senden
@@ -238,7 +293,14 @@ class World {
 
 
     // --- Asynchrone Methode zum Initialisieren/Laden von Assets ---
-    async init(configItems) {
+    async init(itemConfig) {
+        const instancedIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
+        console.log(`[World${instanceIdLog}] init gestartet mit Item: `, itemConfig)
+
+
+        // BIS HIERHIN HABE ICH JETZT ANGEPASST! 
+        // Kommentar von 00:58h
+
         console.log('World init gestartet mit Config:', configItems)
         // configItems sollte das Objekte sein, das wir in main.js definieren!
         // z.B. 'Mein Würfel' oder 'Ente'
