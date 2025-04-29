@@ -4,9 +4,9 @@ body {
     background-color: #f0f0f0;
 }
 
-#scene-container {
+.threejs-viewer-container {
     /* Definiert Größe und Aussehen des 3D-Bereichs */
-    width: 100%;  /* Breite relativ zur umgebenden Seite */
+    /* width: 100%;*/  /* Breite relativ zur umgebenden Seite */
     /* max-width: 800px; /* Maximale Breite */
     height: 400px; /* Feste Höhe */
     /* Alt: margin: 1em auto; */ /* Zentriert den Container horizontal */

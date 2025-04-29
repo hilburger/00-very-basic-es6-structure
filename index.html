@@ -4,26 +4,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dummy Three.js-ES6-Projekt</title>
+    <title>Three.js-ES6-Projekt: Multi-Instanz Test</title>
     <link rel="stylesheet" href="./styles/main.css">
 </head>
 
 <body>
     <h1>Three.js Dummy-ES6-Projekt - Mehrere 3D-Viewer</h1>
 
-    <p>Hier unten siehst du eine interaktive 3D-Szene, eingebettet in normalen Web-Inhalt. Du kannst das Objekt mit der Maus drehen.</p>
+    <p>Hier unten siehst du zwei unabhängige 3D-Szenen, eingebettet in normalen Web-Inhalt. Du kannst das Objekt mit der Maus drehen.</p>
 
     <div class="grid-container">
-        <div id="scene-container" class="grid-item"></div>
+        <div class="threejs-viewer-container" _comment="ID entfernt, Klasse hinzugefügt" 
+             data-config='{
+                "type": "gltf", 
+                "name": "Helm Instanz 1", 
+                "assetUrl": "/models/DamagedHelmet/gltf/DamagedHelmet.gltf",
+                "position": { "x": 0, "y": 0.5, "z": 0 },
+                "rotation": { "x": 0, "y": -0.5, "z": 0 },
+                "scale": { "x": 1, "y": 1, "z": 1 }
+             }'>
+        </div>
 
         <div class="grid-item">
-            <h3>Infos</h3>
-            <h4>Text neben der 3D-Szene</h4>
+            <h3>Viewer 1</h3>
+            <h4>Hier wird der Helm gezeigt!</h4>
             <p>Hier sieht man, wie es wirkt 3D im Content wie ein Bild zu sehen.</p>
             <p>Links ist eine interaktive 3D-Szene, die mit Three.js erstellt wurde. Du kannst sie mit der Maus drehen.</p>
             <p>Versuch es einfach!</p>
         </div>
         
+    </div>
+
+    <hr>
+
+    <div class="grid-container">
+        <div class="grid-item">
+            <h3>Viewer 2</h3>
+            <h4>Hier wird die Ente gezeigt!</h4>
+            <p>Hier sieht man, wie es wirkt 3D im Content wie ein Bild zu sehen.</p>
+            <p>Links ist eine interaktive 3D-Szene, die mit Three.js erstellt wurde. Du kannst sie mit der Maus drehen.</p>
+            <p>Versuch es einfach!</p>
+        </div>
+
+        <div class="threejs-viewer-container" _comment="ID entfernt, Klasse hinzugefügt" 
+             data-config='{
+                "type": "gltf", 
+                "name": "Ente Instanz 2", 
+                "assetUrl": "/models/duck/gltf/Duck.gltf",
+                "position": { "x": 0, "y": 0, "z": 0 },
+                "rotation": { "x": 0, "y": 0.5, "z": 0 },
+                "scale": { "x": 1, "y": 1, "z": 1 }
+             }'>
+        </div>
     </div>
     
     <p>Und wieder text unterhalb des 3D-Canvas.</p>
