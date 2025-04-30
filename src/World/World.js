@@ -297,131 +297,119 @@ class World {
         const instancedIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
         console.log(`[World${instanceIdLog}] init gestartet mit Item: `, itemConfig)
 
+        // Eingangs-Check für das einzelne Konfigurationsobjekt
+        if (!itemCOnfig || !itemConfig.type) {
+            console.error(`[World${instanceIdLog}] Ungültige oder fehlende Konfiguration für init().`)
+            throw new Error(`Ungültige Konfiguration für Viewer-Instanz ${instancedIdLog}.`)
+        }
 
-        // BIS HIERHIN HABE ICH JETZT ANGEPASST! 
-        // Kommentar von 00:58h
-
-        console.log('World init gestartet mit Config:', configItems)
-        // configItems sollte das Objekte sein, das wir in main.js definieren!
-        // z.B. 'Mein Würfel' oder 'Ente'
-
-        // Array für Lade-Promises (für potentiell paralleles Laden)
-        const loadPromises = []
-
-        // Gehe jedes Item in der Konfiguration durch
-        for (const item of configItems) {
-            // Erstelle ein Promise für jedes zu ladende/erstellende Objekt
-            const loadPromise = ( async () => { // Async IIFE für await im Loop
-                let loadedObject = null
-                try {
-                    // Entscheide basierend auf dem Typ, was zu tun ist
-                    switch (item.type) {
-                        case 'cube':
-                            // 1. Textur zuerst laden
-                            let texture = null
-                            if (item.assetUrl) {
-                                texture = await loadTexture(item.assetUrl)
-                                console.log(`Textur für '${item.name || 'Cube'}' geladen.`)
-                            }
-
-                            // 2. Cube-Instanz erstellen und Konfiguration übergeben
-                            // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
-                            loadedObject = new Cube({
-                                ...item, // Kopiert alle Eigenschaften von item (name, size, color etc.)
-                                map: texture // Fügt die geladene Textur als 'map' hinzu
-                            })
-                            console.log(`Objekt '${item.name || 'Cube'}' instanziert.` )
-                            break // Wichtig!
-
-                        case 'plane':
-                            // Erstelle eine Instanz der Plane-Klasse, übergib das item als config
-                            loadedObject = new Plane(item)
-                            console.log(`Objekt '${item.name || 'Plane'}' erstellt.`)
-                            break
-
-                        case 'gltf': 
-                            // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
-                            loadedObject = await loadGltf(item.assetUrl)
-                            console.log(`Objekt '${item.name || 'GLTF'}' geladen.`)
-                            break
-
-                        // Hier können später weitere Typen hinzugefügt werden
-                        // --- Zukünftig denkbare Erweiterung ---
-                        // case 'ambientLight':
-                        //     loadedObject = createAmbientLight(item.color, item.intensity) // Angenommen, es gäde ein createAmbientLight
-                        //     console.log('AmbientLight erstellt')
-                        //     break
-                        // case 'directionalLight':
-                        //  //...
-                        //    // break
-
-                        default:
-                            console.warn(`Unbekannter Objekttyp in Konfiguration: ${item.type}`)
+        let loadedObject = null
+        // Fehlerbehandlung für das Laden dieses EINEN Objekts
+        try {
+            // Entscheide basierend auf dem Typ, was zu tun ist
+            switch (itemConfig.type) {
+                case 'cube':  // HIER WEITER !!! ---------------------------------------------------
+                    // 1. Textur zuerst laden
+                    let texture = null
+                    if (item.assetUrl) {
+                        texture = await loadTexture(item.assetUrl)
+                        console.log(`Textur für '${item.name || 'Cube'}' geladen.`)
                     }
 
-                    // Wenn ein Objekt erfolgreich geladen/erstellt wurde
-                    if (loadedObject) {
-                        // Setze Name (falls in config definiert)
-                        if (item.name) {
-                            loadedObject.name = item.name
-                        }
+                    // 2. Cube-Instanz erstellen und Konfiguration übergeben
+                    // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
+                    loadedObject = new Cube({
+                        ...item, // Kopiert alle Eigenschaften von item (name, size, color etc.)
+                        map: texture // Fügt die geladene Textur als 'map' hinzu
+                    })
+                    console.log(`Objekt '${item.name || 'Cube'}' instanziert.` )
+                    break // Wichtig!
 
-                        // Setze Position (falls in Config definiert)
-                        if (item.position) {
-                            loadedObject.position.set(
-                                item.position.x || 0, 
-                                item.position.y || 0, 
-                                item.position.z || 0
-                            )
-                        }
+                case 'plane':
+                    // Erstelle eine Instanz der Plane-Klasse, übergib das item als config
+                    loadedObject = new Plane(item)
+                    console.log(`Objekt '${item.name || 'Plane'}' erstellt.`)
+                    break
 
-                        // Setze Rotation (falls in Config definiert)
-                        if (item.rotation) {
-                            loadedObject.rotation.set(
-                                item.rotation.x || 0, 
-                                item.rotation.y || 0, 
-                                item.rotation.z || 0
-                            )
-                        }
+                case 'gltf': 
+                    // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
+                    loadedObject = await loadGltf(item.assetUrl)
+                    console.log(`Objekt '${item.name || 'GLTF'}' geladen.`)
+                    break
 
-                        // Setze Skalierung (falls in Config definiert
-                        // Nutze standardwert 1, falls nichts angegeben
-                        if (item.scale) {
-                            loadedObject.scale.set(
-                                item.scale.x || 1, 
-                                item.scale.y || 1, 
-                                item.scale.z || 1
-                            )
-                        }
+                // Hier können später weitere Typen hinzugefügt werden
+                // --- Zukünftig denkbare Erweiterung ---
+                // case 'ambientLight':
+                //     loadedObject = createAmbientLight(item.color, item.intensity) // Angenommen, es gäde ein createAmbientLight
+                //     console.log('AmbientLight erstellt')
+                //     break
+                // case 'directionalLight':
+                //  //...
+                //    // break
 
-                        // Füge das Objekt der Szene hinzu
-                        scene.add(loadedObject)
+                default:
+                    console.warn(`Unbekannter Objekttyp in Konfiguration: ${item.type}`)
+            }
 
-                        // Optional: Füge es zur Liste der klickbaren Objekte hinzu
-                        // (Vorbereitung für spätere Interaktion)
-                        if (this.#clickableObjects) { // Sicherstellen, dass das Array existiert
-                            this.#clickableObjects.push(loadedObject)
-                            console.log(`Objekt '${loadedObject.name || item.type}' zu clickableObjects hinzugefügt.`)
-                        } else {
-                            console.warn(`#clickableObjects existiert nicht beim Hunzufügen von: `, loadedObject.name)
-                        }
-
-                        console.log(`Objekt '${loadedObject.name || item.type}' zur Szene hinzugefügt und konfiguriert.`)
-                        // --- HINWEIS: Rückgabe des loadedObject ist hier nicht mehr nötig, da wir Promise.allSettled nutzen ---
-                        // return loadedObject // Diese Zeile von früher ist nicht mehr nötig
-                    }
-                } catch (error) {
-                    console.error(`Fehler beim Verarbeiten des Config-Items: `, item, error)
-                    // Wichtig: Hier das Promise nicht fehlschlagen lassen, damit Promise.all weiterläuft
-                    // Stattdessen könnte man null zurückgeben oder den Fehler anders behandeln
-                    return null // Signalisiert, dass dieses Item fehlgeschlagen ist
+            // Wenn ein Objekt erfolgreich geladen/erstellt wurde
+            if (loadedObject) {
+                // Setze Name (falls in config definiert)
+                if (item.name) {
+                    loadedObject.name = item.name
                 }
-                // --- WICHTIG: Gib etwas zurück, damit allSettled einen Wert hat ---
-                return loadedObject // Gib das Objekt oder null zurück
-            })() // Die async IIFE aufrufen
 
-            loadPromises.push(loadPromise) // Fügt das Promise zum Array hinzu
-        } // Ende der for ... of Schleife
+                // Setze Position (falls in Config definiert)
+                if (item.position) {
+                    loadedObject.position.set(
+                        item.position.x || 0, 
+                        item.position.y || 0, 
+                        item.position.z || 0
+                    )
+                }
+
+                // Setze Rotation (falls in Config definiert)
+                if (item.rotation) {
+                    loadedObject.rotation.set(
+                        item.rotation.x || 0, 
+                        item.rotation.y || 0, 
+                        item.rotation.z || 0
+                    )
+                }
+
+                // Setze Skalierung (falls in Config definiert
+                // Nutze standardwert 1, falls nichts angegeben
+                if (item.scale) {
+                    loadedObject.scale.set(
+                        item.scale.x || 1, 
+                        item.scale.y || 1, 
+                        item.scale.z || 1
+                    )
+                }
+
+                // Füge das Objekt der Szene hinzu
+                scene.add(loadedObject)
+
+                // Optional: Füge es zur Liste der klickbaren Objekte hinzu
+                // (Vorbereitung für spätere Interaktion)
+                if (this.#clickableObjects) { // Sicherstellen, dass das Array existiert
+                    this.#clickableObjects.push(loadedObject)
+                    console.log(`Objekt '${loadedObject.name || item.type}' zu clickableObjects hinzugefügt.`)
+                } else {
+                    console.warn(`#clickableObjects existiert nicht beim Hunzufügen von: `, loadedObject.name)
+                }
+
+                console.log(`Objekt '${loadedObject.name || item.type}' zur Szene hinzugefügt und konfiguriert.`)
+                // --- HINWEIS: Rückgabe des loadedObject ist hier nicht mehr nötig, da wir Promise.allSettled nutzen ---
+                // return loadedObject // Diese Zeile von früher ist nicht mehr nötig
+            }
+        } catch (error) {
+            console.error(`Fehler beim Verarbeiten des Config-Items: `, item, error)
+            // Wichtig: Hier das Promise nicht fehlschlagen lassen, damit Promise.all weiterläuft
+            // Stattdessen könnte man null zurückgeben oder den Fehler anders behandeln
+            return null // Signalisiert, dass dieses Item fehlgeschlagen ist
+        }
+
+
 
         // Warte, bis alle Lade-Promises abgeschlossen sind (auch fehlgeschlagene)
         // Promise.all würde bei einem Fehler sofort abbrechen
