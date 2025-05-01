@@ -294,13 +294,13 @@ class World {
 
     // --- Asynchrone Methode zum Initialisieren/Laden von Assets ---
     async init(itemConfig) {
-        const instancedIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
+        const instanceIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
         console.log(`[World${instanceIdLog}] init gestartet mit Item: `, itemConfig)
 
         // Eingangs-Check für das einzelne Konfigurationsobjekt
-        if (!itemCOnfig || !itemConfig.type) {
+        if (!itemConfig || !itemConfig.type) {
             console.error(`[World${instanceIdLog}] Ungültige oder fehlende Konfiguration für init().`)
-            throw new Error(`Ungültige Konfiguration für Viewer-Instanz ${instancedIdLog}.`)
+            throw new Error(`Ungültige Konfiguration für Viewer-Instanz ${instanceIdLog}.`)
         }
 
         let loadedObject = null
@@ -308,39 +308,39 @@ class World {
         try {
             // Entscheide basierend auf dem Typ, was zu tun ist
             switch (itemConfig.type) {
-                case 'cube':  // HIER WEITER !!! ---------------------------------------------------
+                case 'cube': 
                     // 1. Textur zuerst laden
                     let texture = null
-                    if (item.assetUrl) {
-                        texture = await loadTexture(item.assetUrl)
-                        console.log(`Textur für '${item.name || 'Cube'}' geladen.`)
+                    if (itemConfig.assetUrl) {
+                        texture = await loadTexture(itemConfig.assetUrl)
+                        console.log(`[World${instanceIdLog}] Textur für '${itemConfig.name || 'Cube'}' geladen.`)
                     }
 
                     // 2. Cube-Instanz erstellen und Konfiguration übergeben
                     // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
                     loadedObject = new Cube({
-                        ...item, // Kopiert alle Eigenschaften von item (name, size, color etc.)
+                        ...itemConfig, // Kopiert alle Eigenschaften von item (name, size, color etc.)
                         map: texture // Fügt die geladene Textur als 'map' hinzu
                     })
-                    console.log(`Objekt '${item.name || 'Cube'}' instanziert.` )
+                    console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Cube'}' instanziert.` )
                     break // Wichtig!
 
-                case 'plane':
-                    // Erstelle eine Instanz der Plane-Klasse, übergib das item als config
-                    loadedObject = new Plane(item)
-                    console.log(`Objekt '${item.name || 'Plane'}' erstellt.`)
+                case 'plane': // Kann jetzt auch per Config kommen (optional)
+                    // Erstelle eine Instanz der Plane-Klasse
+                    loadedObject = new Plane(itemConfig)
+                    console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Plane'}' erstellt.`)
                     break
 
                 case 'gltf': 
                     // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
-                    loadedObject = await loadGltf(item.assetUrl)
-                    console.log(`Objekt '${item.name || 'GLTF'}' geladen.`)
+                    loadedObject = await loadGltf(itemConfig.assetUrl)
+                    console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'GLTF'}' geladen.`)
                     break
 
                 // Hier können später weitere Typen hinzugefügt werden
                 // --- Zukünftig denkbare Erweiterung ---
                 // case 'ambientLight':
-                //     loadedObject = createAmbientLight(item.color, item.intensity) // Angenommen, es gäde ein createAmbientLight
+                //     loadedObject = createAmbientLight(itemConfig.color, itemConfig.intensity) // Angenommen, es gäde ein createAmbientLight
                 //     console.log('AmbientLight erstellt')
                 //     break
                 // case 'directionalLight':
@@ -348,86 +348,72 @@ class World {
                 //    // break
 
                 default:
-                    console.warn(`Unbekannter Objekttyp in Konfiguration: ${item.type}`)
+                    console.warn(`[World${instanceIdLog}] Unbekannter Objekttyp in Konfiguration: ${itemConfig.type}`)
+                    throw new Error(`Unbekannter Objekttyp: ${itemConfig.type}`)
             }
 
             // Wenn ein Objekt erfolgreich geladen/erstellt wurde
             if (loadedObject) {
-                // Setze Name (falls in config definiert)
-                if (item.name) {
-                    loadedObject.name = item.name
-                }
+                // Konfiguration anwenden
+                if (itemConfig.name) loadedObject.name = itemConfig.name
 
                 // Setze Position (falls in Config definiert)
-                if (item.position) {
+                if (itemConfig.position) {
                     loadedObject.position.set(
-                        item.position.x || 0, 
-                        item.position.y || 0, 
-                        item.position.z || 0
+                        itemConfig.position.x || 0, 
+                        itemConfig.position.y || 0, 
+                        itemConfig.position.z || 0
                     )
                 }
 
-                // Setze Rotation (falls in Config definiert)
-                if (item.rotation) {
+                // Rotation nur setzen, wenn nicht in der Komponente selbst gesetzt (wie bei Plane)
+                if (itemConfig.rotation && itemConfig.type !== 'plane') {
                     loadedObject.rotation.set(
-                        item.rotation.x || 0, 
-                        item.rotation.y || 0, 
-                        item.rotation.z || 0
+                        itemConfig.rotation.x || 0, 
+                        itemConfig.rotation.y || 0, 
+                        itemConfig.rotation.z || 0
                     )
                 }
 
                 // Setze Skalierung (falls in Config definiert
                 // Nutze standardwert 1, falls nichts angegeben
-                if (item.scale) {
+                if (itemConfig.scale) {
                     loadedObject.scale.set(
-                        item.scale.x || 1, 
-                        item.scale.y || 1, 
-                        item.scale.z || 1
+                        itemConfig.scale.x || 1, 
+                        itemConfig.scale.y || 1, 
+                        itemConfig.scale.z || 1
                     )
                 }
 
-                // Füge das Objekt der Szene hinzu
-                scene.add(loadedObject)
+                // --- WICHTIG: Füge zur Instanz-Szene und Instanz-Clickables hinzu ---
+                this.#scene.add(loadedObject)
+                console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt.`)
 
                 // Optional: Füge es zur Liste der klickbaren Objekte hinzu
                 // (Vorbereitung für spätere Interaktion)
                 if (this.#clickableObjects) { // Sicherstellen, dass das Array existiert
                     this.#clickableObjects.push(loadedObject)
-                    console.log(`Objekt '${loadedObject.name || item.type}' zu clickableObjects hinzugefügt.`)
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur clickableObjects hinzugefügt.`)
                 } else {
                     console.warn(`#clickableObjects existiert nicht beim Hunzufügen von: `, loadedObject.name)
                 }
 
-                console.log(`Objekt '${loadedObject.name || item.type}' zur Szene hinzugefügt und konfiguriert.`)
+                console.log(`Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt und konfiguriert.`)
                 // --- HINWEIS: Rückgabe des loadedObject ist hier nicht mehr nötig, da wir Promise.allSettled nutzen ---
                 // return loadedObject // Diese Zeile von früher ist nicht mehr nötig
+            } else {
+                // Falls der Switch keinen LoadObject erzeugt hat
+                throw new Error(`Objekt konnte nicht geladen/erstellt werden für Typ: ${itemConfig.type}`)
             }
         } catch (error) {
-            console.error(`Fehler beim Verarbeiten des Config-Items: `, item, error)
-            // Wichtig: Hier das Promise nicht fehlschlagen lassen, damit Promise.all weiterläuft
-            // Stattdessen könnte man null zurückgeben oder den Fehler anders behandeln
-            return null // Signalisiert, dass dieses Item fehlgeschlagen ist
+            console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
+            throw error // Fehler weiterwerfen, wird in main.js gefangen
         }
-
-
-
-        // Warte, bis alle Lade-Promises abgeschlossen sind (auch fehlgeschlagene)
-        // Promise.all würde bei einem Fehler sofort abbrechen
-        // Promise.allSettled wartet auf alle, egal ob Erfolg oder Fehler
-        const results = await Promise.allSettled(loadPromises)
-        console.log('Alle Lade-Promises abgeschlossen', results)
-
-        // Optional: Prüfe results auf Fehler
-        results.forEach((result, index) => {
-            if (result.status === 'rejected') {
-                console.error(`Fehler beim Laden von Item ${index} (${configItems[index]?.name || configItems[index]?.type}):`, result.reason)
-            }
-        })
         
-        console.log('World Init abgeschlossen.')
+        console.log(`[World${instanceIdLog}] init abgeschlossen für: ${itemConfig.name || itemConfig.type}`)
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
 
-        // Event Listener hier registrieren
+        // Event Listener hier erst registrieren, wenn Objekt sicher hinzugefügt wurde
         this.#setupEventListeners() // Rufe die Methode auf, die die Listener anmeldet
     }
 
