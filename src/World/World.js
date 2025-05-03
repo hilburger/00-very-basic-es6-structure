@@ -170,125 +170,149 @@ class World {
     }
 
     // --- Methode zum Einrichten der Debug-Tools ---
-    #setupDebugTools(container){
-        console.log('Setting up Debug Tools...')
+    #setupDebugTools() {
+        const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : '' // Sicherer Zugriff
+        console.log(`[World${instanceIdLog}] Setup Debug Tools...`)
 
         // 1. Stats.js (FPS-Anzeige)
         this.#stats = new Stats()
         this.#stats.dom.style.position = 'absolute' // Positionieren
         this.#stats.dom.style.left = '0px'
         this.#stats.dom.style.top = '0px'
-        // Füge es dem Body hinzu, nicht zum Canvas-Container, damit es sichtbar bleibt
-        document.body.appendChild(this.#stats.dom)
+        this.#stats.dom.style.zIndex = '100' // Über dem Canvas
+        this.#container.appendChild(this.#stats.dom) // Füge zum spezifischen COntainer hinzu
 
         // 2. AxesHelper (Koordinatenachsen im Ursprung)
-        const axesHelper = new AxesHelper(3) // Die Zahl gibt die Länge der Achsen an
-        scene.add(axesHelper)
-        console.log('AxesHelper zur Szene hinzugefügt.')
+        this.#axesHelper = new AxesHelper(3) // Speichere als Instanzvariable, die Zahl gibt die Länge der Achsen an
+        this.#scene.add(this.#axesHelper) // Füge zur Instanz-Szene hinzu
+        console.log(`[World${instanceIdLog}] AxesHelper hinzugefügt.`)
 
-        // 3. lil-gui (Grafische Benutzeroberfläche)
-        this.#gui = new GUI()
-        console.log('lil-gui Instanz erstellt.')
-
-        // Füge Beispiel-Controls hinzu: 
-        
-        // - Ordner für Szenen-Einstellungen
-        const sceneFolder = this.#gui.addFolder('Szene')
-        //   - Hintergrundfarbe ändern
-        const bgColor = { color: `#${scene.background.getHexString()}`} // Aktuelle Farbe holen
-        sceneFolder.addColor(bgColor, 'color').name('Hintergrund').onChange(value => {
-            scene.background.set(value) // Farbe bei Änderung setzen
-        })
-        sceneFolder.open() // Ordner standardmäßig öffnen
-
-        // - Ordner für Lichter (Beispiel: Umgebungslicht)
-        // Wir brauchen eine Referenz auf das Licht. Besser wäre Lichter zu verwalten.
-        // Quick & Dirty: Finden über den Typ Licht (nicht sehr robust!!!)
-        const ambientLight = this.#lights.find(light => light.isAmbientLight)
-        if (ambientLight) {
-            const lightFolder = this.#gui.addFolder('Beleuchtung')
-            lightFolder.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
-            // lightFolder.open()
+        // 3. lil-gui (Grafische Benutzeroberfläche, geteilte Instanz)
+        guiRefCount++ // Zähle hoch für jede Instanz, die es braucht
+        if (!sharedGui && GUI) { // Nur erstellen, wenn noch keine da ist und GUI importiert wurde
+            sharedGui = new GUI()
+            console.log('Globale lil-gui Instanz erstellt.')
+            // Optional: Position der globalen GUI anpassen
+            // sharedGui.domElement.style.position = 'absolute'
+                // Beispiel oben rechts fixiert
+                // sharedGui.domElement.style.position = 'fixed'
+                // sharedGui.domElement.style.right = '10px'
+                // sharedGui.domELement.style.top = '10px'
+                // sharedGui.domElement.style.zIndex = '110' // Über den Stats
         }
+        this.#gui = sharedGui // Jede Instanz referenziert dieselbe GUI
+        
+        // Nur fortfahren, wenn GUI existiert
+        if (this.#gui) {
+            // Eindeutigen Ordner pro Instanz hinzufügen
+            const instanceName = this.#container?.id || `Viewer_${guiRefCount}` // Sicherer Zugriff
+            // Erstelle Ordner für diese Instanz
+            const instanceFolder = this.#gui.addFolder(instanceName)
 
-        // Wenn Objekte Namen haben, kann man sie auch hinzufügen (koplexer)
-        // Beispiel (wenn Ente geladen und 'Ente' heißt) 
-        // const duck = scene.getObjectByName('Ente')
-        // if (duck) {
-        //     const duckFolder = this.#gui.addFolder('Ente')
-        //     duckFolder.add(duck.position, 'x', -5, 5, 0.1).name('Position X')
-        //     // ... usw. für y, z, rotation, scale
-        // }
+            // Hintergrundfarbe (Instanz-spezifisch)
+            // Nutzt this.#scene
+            const bgColor = { color: `#${this.#scene.background.getHexString()}` }
+            instanceFolder.addColor(bgColor, 'color').name('Hintergrund').onChange(value => {
+                this.#scene.background.set(value) // Ändert Szene DIESER Instanz
+            })
+
+            // Umgebungslicht (Instanz-spezifisch)
+            // Nutzt this.#lights
+                // Wir brauchen eine Referenz auf das Licht. Besser wäre Lichter zu verwalten.
+                // Quick & Dirty: Finden über den Typ Licht (nicht sehr robust!!!)
+            const ambientLight = this.#lights.find(light => light.isAmbientLight)
+            if (ambientLight) {
+                // Füge Regler zum Instanz-Ordner hinzu
+                instanceFolder.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
+            }
+            // instanceFolder.open() // Diesen Folder öffnen? Besser nicht bei vielen Instanzen.
+            console.log(`[World${instanceIdLog}] GUI-Ordner hinzugefügt.`)
+        } else {
+            console.log(`[World${instanceIdLog}] KEINE GUI-Instanz verfügbar.`)
+        }
     }
 
     // Interaktion (Raycasting bei Klick) einrichten
-    #setupInteraction(container) {
-        const canvas = renderer.domElement // Das canvas-Element holen
+    #setupInteraction() {
+        const canvas = this.#renderer.domElement // Das canvas-Element via Instanz-Variable holen
 
-        canvas.addEventListener('pointerdown', (event) => {// 'pointerdown' ist oft besser als 'click'
-            // 1. Mauskoordination berechnen (normalisiert: -1 bis +1)
-            const bounds = canvas.getBoundingClientRect() // Position/Größe des Canvas holen
-            this.#mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 -1
-            this.#mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
+        // Wichtig: WIr brauchen eine gebundene Referenz zum Listener, damit wir ihn später entfernen können
+        // Speichere sie als Instanzeigenschaft (kann public sein, muss nicht # sein)
+        this.boundPointerDownHandler = this.#handlePointerDown.bind(this)
 
-            // 2. Raycaster aktualisieren
-            this.#raycaster.setFromCamera(this.#mouse, camera)
+        // Füge den gebundenen istener hinzu
+        canvas.addEventListener('pointerdown', this.boundPointerDownHandler)
+        console.log(`[World${this.#container?.id ? ` ID: ${this.#container.id}` : ''}] Pointerdown Listener hinzugefügt.`)
+    }
 
-            // 3. Schnittpunkte finden (nur mit unseren klickbaren Objekten!)
-            // intersectObjects erwartet ein Array von Meshes/Groups
-            const intersects = this.#raycaster.intersectObjects(this.#clickableObjects, true)
+    #handlePointerDown(event) {
+        // 1. Mauskoordination berechnen (normalisiert: -1 bis +1)
+        // Nutzt this.#renderer und this.#mouse
+        const bounds = this.#renderer.domElement.getBoundingClientRect() // Position/Größe des Canvas der Instanz holen
+        this.#mouse.x = ((event.clientX - bounds.left) / bounds.width) * 2 -1
+        this.#mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1
 
-            if (intersects.length > 0) {
-                // Treffer! Nimm das vorderste Objekt.
-                const intersection = intersects[0]
-                const clickedObject = intersection.object
+        // 2. Raycaster aktualisieren
+        this.#raycaster.setFromCamera(this.#mouse, this.#camera)
 
-                // Finde das Top-Level-Objekt, das wir zu #clickableObjects hinzugefügt haben
-                // (nützlich, wenn man auf ein Kind-Mesh einer Gruppe klickt)
-                let topLevelClickedObject = clickedObject
-                while (topLevelClickedObject.parent && topLevelClickedObject.parent !== scene) {
-                    // Prüfen, ob ein Vorfahre in clickableObjects ist
-                    if (this.#clickableObjects.includes(topLevelClickedObject.parent)) {
-                        topLevelClickedObject = topLevelClickedObject.parent
-                        break // Optional: Nur das erste Top-Level nehmen
-                    }
-                    // Wenn kein klickbarer Vorfahre gefunden wird, bis zur Szene hochgehen
-                    // und das direkt getroffene Objekt als Basis nehmen.
-                    // Für das GLTF ist das oft ein Kind-Mesh, wir wollen aber die Gruppe.
-                    // Diee Logik kann man verfeinern! Vorerst nehmen wir aber das Top-Level
-                    if (this.#clickableObjects.includes(topLevelClickedObject)) {
-                        break // Das Objekt selbst ist klickbar
-                    }
+        // 3. Schnittpunkte finden (nur mit unseren klickbaren Objekten!)
+        // Nutzt this.#raycaster und this.#clickableObjects
+        const intersects = this.#raycaster.intersectObjects(this.#clickableObjects, true) // true = rekursiv (auch Kinder)
+
+        if (intersects.length > 0) {
+            // Treffer! Nimm das vorderste Objekt.
+            const intersection = intersects[0]
+            const clickedObject = intersection.object
+
+            // Finde das Top-Level-Objekt, das wir zu #clickableObjects hinzugefügt haben 
+            // (Logik wie gehabt, nutzt this.#clickableObjects und this.#scene)
+            // (nützlich, wenn man auf ein Kind-Mesh einer Gruppe klickt)
+            let topLevelClickedObject = clickedObject
+            while (topLevelClickedObject.parent && topLevelClickedObject.parent !== this.#scene) {
+                // Prüfen, ob ein Vorfahre in clickableObjects ist
+                if (this.#clickableObjects.includes(topLevelClickedObject.parent)) {
                     topLevelClickedObject = topLevelClickedObject.parent
-
-                    // Sicherheits-Check gegen Endlosschleife (sollte nicht passieren)
-                    if (topLevelClickedObject === scene) {
-                        topLevelClickedObject = clickedObject // Fallback zum direkt getroffenen
-                        break
-                    }
+                    break // Optional: Nur das erste Top-Level nehmen
                 }
-
-                // Stelle sicher, dass wir tatsächlich ein Objekt das zu Liste der klickbaren Objekt (clickable List) hinzugefügt worden ist referenzieren!
-                if (!this.#clickableObjects.includes(topLevelClickedObject)) {
-                    topLevelClickedObject = topLevelClickedObject // Fallback falls die vorige Logik fehlschlägt
+                // Wenn kein klickbarer Vorfahre gefunden wird, bis zur Szene hochgehen
+                // und das direkt getroffene Objekt als Basis nehmen.
+                // Für das GLTF ist das oft ein Kind-Mesh, wir wollen aber die Gruppe.
+                // Diee Logik kann man verfeinern! Vorerst nehmen wir aber das Top-Level
+                if (this.#clickableObjects.includes(topLevelClickedObject)) {
+                    break // Das Objekt selbst ist klickbar
                 }
+                topLevelClickedObject = topLevelClickedObject.parent
 
-                console.log('Raycast hit:', clickedObject) // Das tatsächlich getroffene Mesh/etc.
-                console.log('Top-Level Clickable', topLevelClickedObject)
-
-                // 4. Event über den Event Bus senden
-                eventBus.emit('objectClicked', {
-                    object: topLevelClickedObject, // Das Objekt aus unserer Liste
-                    name: topLevelClickedObject.name, 
-                    uuid: topLevelClickedObject.uuid, 
-                    point: intersection.point, // Der genaue 3D-Punkt des Klicks
-                    distance: intersection.distance, // Entfernung vom Klick zur Cam
-                    face: intersection.face, // Welche Fläche getroffen wurde
-                    originalEvent: event, // Das ursprüngliche Maus-Event
-                })
+                // Sicherheits-Check gegen Endlosschleife (sollte nicht passieren)
+                if (topLevelClickedObject === this.#scene) {
+                    topLevelClickedObject = clickedObject // Fallback zum direkt getroffenen
+                    break
+                }
             }
 
-        })
+            // 2. Check/Fallback:S
+            // telle sicher, dass wir tatsächlich ein Objekt das zu Liste der klickbaren Objekt (clickable List) hinzugefügt worden ist referenzieren!
+            if (!this.#clickableObjects.includes(topLevelClickedObject)) {
+                topLevelClickedObject = clickedObject // Fallback falls die vorige Logik fehlschlägt
+                console.warn("Konnte Top-Level klickbares Objekt nicht sicher bestimmen, verwende direkt getroffenes.")
+            }
+
+            const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
+            console.log(`[World${instanceIdLog}] Raycast hit:`, clickedObject.name || clickedObject.uuid ) // Das tatsächlich getroffene Mesh/etc.
+            console.log(`[World${instanceIdLog}] Top-Level Clickable:`, topLevelClickedObject.name || topLevelClickedObject.uuid)
+
+            // 4. Event über den Event Bus senden
+            eventBus.emit('objectClicked', {
+                object: topLevelClickedObject, // Das Objekt aus unserer Liste
+                name: topLevelClickedObject.name, 
+                uuid: topLevelClickedObject.uuid, 
+                point: intersection.point, // Der genaue 3D-Punkt des Klicks
+                distance: intersection.distance, // Entfernung vom Klick zur Cam
+                face: intersection.face, // Welche Fläche getroffen wurde
+                originalEvent: event, // Das ursprüngliche Maus-Event
+                worldInstance: this // Referenz zur World-Instanz mitsenden
+            })
+        }
     }
 
 
@@ -419,17 +443,30 @@ class World {
 
     // --- Methode zum Registrieren der Listener
     #setupEventListeners() {
-        eventBus.on('objectClicked', (eventData) => {
+        // Speichere die gebundene Referenz zum Callback für späteres .off() in dispose()
+        // Die Funktion selbst ist eine Pfeilfunktion, bind(this) ist nicht nötig
+        // aber wir speichern sie trotzdem für .off()
+        this.boundObjectClickedHandler = (eventData) => {
+            // Prüfen, ob das Event für DIESE Instanz relevant ist
+            // Vergleiche die mitgesendete WorldInstance mit der aktuellen Instanz
+            if (eventData.worldInstance !== this) {
+                // console.log(`[World Instance ${this.#container?.id || '?'}] Ignoriere Klick-Event von anderer Instanz.`)
+                return // Nicht auf Events von anderen Instanzen reagieren
+            }
+
+            // Hole Instanz-ID für Log-Ausgabe
+            const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
             console.log(
-                `%cEVENT BUS: Objekt geklickt!%c
+                `%cEVENT BUS (Instanz${instanceIdLog}): Objekt geklickt!%c
                 Name: ${eventData.name || '(kein Name)'}
                 UUID: ${eventData.uuid}
                 Position: ${eventData.point.x.toFixed(2)}, ${eventData.point.y.toFixed(2)}, ${eventData.point.z.toFixed(2)}`,
-                'color: blue; font-weight: bold;', // Style für den ersten Teil
-                'color: black;' // Style für den Rest
+                'color: blue; font-weight: bold;',
+                'color: black;'
             )
 
-            // Beispielhafte Reaktion: Das Objekt leicht nach oben "hüpfen" lassen:
+            // Beispielhafte Reaktion (Hüpfen) - nutzt eventData.object
+            // Greift NICHT auf this.#... zu
             if (eventData.object && typeof eventData.object.position?.y === 'number') {
                 const originalY = eventData.object.userData.originalY ?? eventData.object.position.y
                 eventData.object.userData.originalY = originalY // Speichere Originalposition, falls noch nicht geschehen
@@ -443,28 +480,196 @@ class World {
                     }
                 }, 300) // Nach 300ms zurücksetzen
             }
-        })
+        } // Ende des Callbacks für 'objectClicked'
 
-        // HIER können weitere Listener registriert werden...
-        // eventBus.on('anderesEvent', (data) => { /* ... */ })
-        console.log("Event Bus Listener registriert.")
+        // Registriere den gespeicherten Handler beim Event Bus
+        eventBus.on('objectClicked', this.boundObjectClickedHandler)
+
+        // Optional: Log für Bestätigung
+        const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
+        console.log(`[World${instanceIdLog}] 'objectClicked' Event Listener registriert.`)
+
+        // Hier könnten später weitere Listener für DIESE Instanz registriert werden.
+        // Z.B.: this.boundMyEventHandler = (data) => { if(data.worldInstance !== this) return; /*...*/ }
+        // eventBus.on('myEvent', this.boundMyEventHandler)
     }
 
     render() {
-        // Kleine SIcherheitsprüfung
-        if( !renderer || !scene || !camera) return
-        renderer.render(scene, camera)
+        // Sicherheitsprüfung mit korrekter Logik und Inbstanzvariablen
+        if( !this.#renderer || !this.#scene || !this.#camera) {
+            console.warn(`[World Instance ${this.#container.id || '?'}] Render abgebrochen - Kernkomponente fehlt!`)
+            return
+        }
+        // Rufe render auf der Instanzvariablen auf
+        this.#renderer.render(this.#scene, this.#camera)
     }
     
     start() {
-        if (!loop) return
-        loop.start()
+        // Prüfe Instanzvariable
+        if (!this.#loop) {
+            console.warn(`[World Instance ${this.#container.id || '?'}] Start abgebrochen - Loop fehlt!`)
+            return
+        }
+        // Rufe start auf der Instanzvariablen auf
+        this.#loop.start()
+        console.log(`[World Instance ${this.#container.id || '?'}] Loop gestartet!`)
     }
     
     stop() {
-        if (!loop) return
-        loop.stop()
+        // Prüfe Instanzvariable
+        if (!this.#loop) {
+            console.warn(`[World Instance ${this.#container.id || '?'}] Stop abgebrochen - Loop fehlt!`)
+            return
+        }
+        // Rufe Stop auf der Instanzvariablen auf
+        this.#loop.stop()
     }
-}
+
+    /**
+     * --- Dispose-Methode --
+     * 
+     * Gibt Ressourcen frei, die von dieser World-Instanz verwendet werden. 
+     * Wichtig, um Speicherlecks bei mehreren INstanzen oder dynamischem Entfernen zu vermeiden. 
+     * 
+     */
+    dispose() {
+        const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
+        console.log(`[World${instanceIdLog}] Dispose wird aufgerufen...`)
+
+        // 1. Event Listener entfernen ---
+        
+        // PointerDown Listener vom Canvas entfernen
+        if (this.#renderer && this.boundPointerDownHandler) {
+            this.#renderer.domElement.removeEventListener('pointerdown', this.boundPointerDownHandler)
+            console.log(`[World${instanceIdLog}] PointerDown Listener entfernt.`)
+            this.boundPointerDownHandler = null // Referenz löschen
+        }
+
+        // EventBus Listener entfernen
+        if (this.boundObjectClickedHandler) {
+            eventBus.off('objectClicked', this.boundObjectClickedHandler)
+            console.log(`[World${instanceIdLog}] EventBus Listener entfernt.`)
+            this.boundObjectClickedHandler = null // Referenz löschen
+        }
+        // TODO: Ggf. 'resize' Listener vom Resizer entfernen (Wenn Resizer einedispose Methode hätte)
+
+
+        // 2. Loop stoppen und leeren ---
+        this.stop() // Stoppt den Animation Loop für diese Instanz
+        if (this.#loop) {
+            this.#loop.updatables = [] // Array leeren (entfernt Controls, Stats)
+            console.log(`[World${instanceIdLog}] Loop gestoppt und geleert.`)
+        }
+
+
+        // 3. Debug-Tools entfernen und aufräumen ---
+        if (this.#isDebugMode) {
+            // Stats.js DOM-Element entfernen
+            if (this.#stats?.dom.parentElement) {
+                this.#stats.dom.parentElement.removeChild(this.#stats.dom)
+                console.log(`[World${instanceIdLog}] Stats DOM entfernt.`)
+            }
+            // AxesHelper aus SZene entfernen und disposen
+            if (this.#axesHelper) {
+                this.#scene?.remove(this.#axesHelper) // Sicherer Zugriff auf #scene
+                this.#axesHelper.dispose?.() // Methode dispose aufrufen, falls vorhanden
+                console.log(`[World${instanceIdLog}] AxesHelper entfernt.`)
+            }
+            // GUI Ordner entfernen (von der geteilten GUI)
+            if (this.#gui && sharedGui === this.#gui) { // Nur, wenn diese Instanz eine globale GUI hat
+                guiRefCount-- // Referenzzähler reduzieren
+                const instanceName = this.#container?.id || `Viewer_${guiRefCount + 1}` // Name rekonstruieren (besser speichern!)
+                try {
+                    // Finde den Ordner dieser Instanz und zerstöre ihn
+                    const folder = this.#gui.folders.find(f => f._title === instanceName)
+                    if (folder) {
+                        folder.destroy()
+                        console.log(`[World${instanceIdLog}] GUI Ordner '${instanceName}' entfernt.`)
+                    }
+                } catch (e) { console.warn("Fehler beim Entfernen des GUI-Ordners:", e) }
+
+                // Zerstöre die globale GUI nur, wenn keine Instanz mehr sie mehr braucht
+                if (guiRefCount <= 0 && sharedGui) {
+                    console.log("Zerstöre geteilte GUI.")
+                    sharedGui.destroy()
+                    sharedGui = null
+                }
+            }
+        }
+
+
+        // 4. Objekte aus Szenen entfernen und Ressourcen freigeben (wichtig!)---
+        if (this.#scene) {
+            console.log(`[World${instanceIdLog}] Bereinige Szene`)
+            // [...this.#scene.children].forEach(obj => { // Iteriere über Kopie
+            // Alternative zum Spread-Operator
+            const sceneChildren = Array.from(this.#scene.children)
+            sceneChildren.forEach(obj => { // Iteriere über Kopie
+                this.#scene.remove(obj)
+
+                // Versuche Geometrie, Material und Texturen freizugeben
+                // Dies ist eine vereinfachte Verison - kompexe Modelle brauchen ggf. mehr
+                try {
+                    if (obj.geometry) obj.geometry.dispose()
+
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) {
+                            obj.material.forEach(material => {
+                                if (material.map) material.map.dispose()
+                                // Weitere Texturtypen prüfen
+                                material.dispose()
+                            })
+                        } else {
+                            if (obj.material.map) obj.material.map.dispose()
+                            // Weitere Texturtypen prüfen
+                            obj.material.dispose()
+                        }
+                    }
+                } catch (e) { console.warn("Fehler beim Disposen von Objekt-Ressourcen:", obj.name || obj.uuid, e)}
+
+                /** Optional: Rekursive Bereinigung für Gruppen (wenn Modelle Kinder haben)
+                 * function disposeNode(node) { ... }
+                 * disposeNode(obj)
+                 * */
+                
+            })
+            console.log(`[World${instanceIdLog}] Szene geleert.`)
+        }
+
+
+        // 5. Renderer disposen (gibt WebGL Kontext frei) ---
+        this.#renderer?.dispose() // Sicherer Aufruf
+        if (this.#renderer?.domElement.parentElement) {
+            this.#renderer.domElement.parentElement.removeChild(this.#renderer.domElement)
+        }
+        console.log(`[World${instanceIdLog}] Renderer disposed.`)
+
+        // 6. OrbitControls disposen (falls nötig - hat keine explizite dispose-Methode, aber Listenerwerden durch loop-Stop inaktiv) ---
+        this.#controls?.dispose?.() // Ruft dispose auf, falls es existiert
+
+        
+        console.log(`[World${instanceIdLog}] Dispose abgeschlossen!`)
+
+        // 7. Alle Instanz-Referenzen löschen (optional, hilft Garbage Colector) ---
+        this.#camera = null
+        this.#scene = null
+        this.#renderer = null
+        this.#loop = null
+        this.#controls = null
+        this.#resizer = null
+        this.#lights = [] 
+        this.#clickableObjects = []
+        this.#raycaster = null
+        this.#mouse = null
+        this.#stats = null
+        this.#gui = null
+        this.#axesHelper = null
+        this.#container = null // Wichtig: Referenz auf DOM-Element löschen
+        this.boundPointerDownHandler = null
+        this.boundObjectClickedHandler = null
+
+    } // Ende dispose-Methode
+
+} // Ende Klasse World
 
 export { World }
