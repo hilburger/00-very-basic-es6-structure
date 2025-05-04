@@ -1,7 +1,7 @@
 // src/World/World.js
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
-import { LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer} from 'three' // AxesHelper und Color sind nur für Debugging
+import { LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer, Box3, Vector3 } from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
 import eventBus from './systems/EventBus.js'
@@ -102,6 +102,7 @@ class World {
         // Sie benötigen die Kamera und das COM-Element (canvas), auf das sie hören sollen
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement)
         // Aktiviere Dämpfung für sanfteres Auslaufen der Bewegung beim Loslassen der Maus
+        this.#controls.target.set(0, 0.75, 0)
         this.#controls.enableDamping = true
         this.#controls.dampingFactor = 0.05 // Stärke der Dämpfung
         // WICHTIG: Damit Raycasting und OrbitControls nicht kollidieren, 
@@ -165,13 +166,13 @@ class World {
         // Nutzt die Breite/Höhe des spezifischen Containers dieser Instanz
         const aspectRatio = this.#container.clientWidth / this.#container.clientHeight
         const camera = new PerspectiveCamera(
-            75,     // FOV
+            58,     // FOV
             aspectRatio, 
             0.1,    // near
             100     // far
         )
         // Setze Standard-Kameraposition für jede Instanz
-        camera.position.set(0, 1.5, 5)
+        camera.position.set(0, 1, 2)
         return camera
     }
 
