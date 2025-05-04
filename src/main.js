@@ -23,28 +23,40 @@ async function main() {
     console.log(`Found ${viewerContainers.length} viewer containers`)
 
     // 2. Für jeden Container eine World-Instanz erstellen
-    viewerContainers.forEach(async (containerElement, index) => { // async für init
-        console.log(`Initializing viewer ${index + 1}`)
+    let instanceCounter = 1 // Starten bei 1 für die ID
+    for (const containerElement of viewerContainers) {
+    // viewerContainers.forEach(async (containerElement, index) => { // async für init
+        const instanceId = instanceCounter // ID für DIESE Instanz
+        console.log(`Initializing viewer ${instanceId}`)
+
+        // Optional: Gib dem Container eine ID, falls er keine hat
+        // (nützlich, für Debugging)
+        if (!containerElement.id) {
+            containerElement.id = 'threejs-viewer-${instanceId}'
+        }
+
         try {
             // Konfiguration aus dataAttribut lesen
             const configString = containerElement.dataset.config
             if (!configString) {
-                console.error(`Container ${index + 1} fehlt das data-config Attribut!`)
-                return // Nächsten Container versuchen
+                console.error(`Container ${instanceId} (${containerElement.id}) fehlt das data-config Attribut!`)
+                instanceCounter++ // Zum nächsten Zähler gehen
+                continue // Nächsten Container versuchen
             }
 
             let itemConfig = null
             try {
                 itemConfig = JSON.parse(configString) // JSON parsen
             } catch(e) {
-                console.error(`Fehler beim Parsen von data-config für Container ${index + 1}:`, configString, e)
-                return // Nächsten Container versuchen
+                console.error(`Fehler beim Parsen von data-config für Container ${instanceId} (${containerElement.id}):`, configString, e)
+                instanceCounter++
+                continue // Nächsten Container versuchen
             }
 
             // World-Instanz für DIESEN Container erstellen
-            // WICHTIG: Wir übergeben die Instanz-spezifische Konfiguration (itemCOnfig)
+            // WICHTIG: Wir übergeben die Instanz-spezifische Konfiguration (itemConfig)
             // und das Debug-FLag
-            const world = new World(containerElement, isDebugMode)
+            const world = new World(containerElement, isDebugMode, instanceId)
 
             // Asynchrone Initialisierung für DIESE Instanz aufrufen
             // Die init-Methode muss angepasst werden, um nur EIN itemConfig zu erwarten!
@@ -53,18 +65,19 @@ async function main() {
             // Loop für DIESE Instanz starten
             world.start()
 
-            console.log(`Viewer ${index + 1} initialized successfully.`)
+            console.log(`Viewer ${instanceId} (${containerElement.id}) initialized successfully.`)
 
         } catch (error) {
-            console.error(`Initialisierung von Viewer ${index + 1} fehlgeschlagen:`, error)
+            console.error(`Initialisierung von Viewer ${instanceId} (${containerElement.id}) fehlgeschlagen:`, error)
             if (containerElement) {
                 containerElement.textContent = '3D Viewer konnte nicht geladen werden.'
                 containerElement.style.cssText = 'border: 2px solid red; padding: 1em; color: red; min-height: 100px;'
             }
         }
-    })
+        instanceCounter++
+    }//)
 }
 
 // Rufe die Hauptfunktion main auf, um die Anwendung zu starten
 // Dies geschieht, sobald dieses Script vom Browser geladen und ausgeführt wird
-main()
+main().catch(console.error)
