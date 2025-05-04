@@ -72,14 +72,13 @@ class World {
         this.#clickableObjects = []
         this.#lights = [] // Initialisiere leeres Array
 
+        // 5. Ladeanzeigen-UI erstellen und zum Container hinzufügen
+        this.#createLoadingIndicatorUI()
+
         // 1. Erstelle die Kernkomponenten als Instanzvariablen via interner Methoden
         this.#scene = this.#createScene()
         this.#camera = this.#createCamera() // Nutzt jetzt this.#container für Aspect Ratio
         this.#renderer = this.#createRenderer()
-
-        // 2. Raycasting für diese Instanz initialisieren
-        this.#raycaster = new Raycaster()
-        this.#mouse = new Vector2() // Initialisiere den 2D-Vektor
 
         // 3. Canvas DIESER Instanz zum Container hinzufügen
         this.#container.append(this.#renderer.domElement)
@@ -87,8 +86,9 @@ class World {
         // 4. Loading Manager Instanz erstellen und Callback definieren
         this.#setupLoadingManager(instanceIdLog)
 
-        // 5. Ladeanzeigen-UI erstellen und zum Container hinzufügen
-        this.#createLoadingIndicatorUI()
+        // 2. Raycasting für diese Instanz initialisieren
+        this.#raycaster = new Raycaster()
+        this.#mouse = new Vector2() // Initialisiere den 2D-Vektor
 
         // 6. OrbitControls für DIESE Instanz erstellen
         // Wichtig: Übergibt jetzt Instanzvariablen!
@@ -188,6 +188,7 @@ class World {
     // --- Methoden für Ladeanzeige ---
 
     #createLoadingIndicatorUI() {
+        console.log('Create loader UI now')
         this.#loadingIndicatorElement = document.createElement('div')
         this.#loadingIndicatorElement.className = 'loading-indicator'
        // this.#loadingIndicatorElement.style.display = 'none' // Initial versteckt

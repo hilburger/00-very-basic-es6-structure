@@ -12,7 +12,7 @@ body {
     /* Alt: margin: 1em auto; */ /* Zentriert den Container horizontal */
     margin-block: 1em; /* Modernere Schreibweise für oben/unten */
     border: 1px solid #ccc;
-    background-color: #fff; /* Hintergrund für den Container */
+    background-color: #282c34; /* Hintergrund für den Container */
     position: relative; /* Wichtig für das Canvas-Element und die absolute Positionierung des Loading-Overlays */
     min-width: 0;
     overflow: hidden; /* Verhindert, dass das Overlay übersteht */
@@ -51,7 +51,7 @@ canvas {
     pointer-events: none; /* Erlaubt Klicks DURCH das Overlay hindurch, falls nötig */
     font-family: sans-serif;
     transition: opacity 0.3s ease-out; /* Sanftes Ein-/Ausblenden */
-    opacity: 1; /* STar-Opazität, wenn display: flex */
+    opacity: 1; /* Star-Opazität, wenn display: flex */
 }
 
 .loading-message {
