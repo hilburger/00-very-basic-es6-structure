@@ -57,7 +57,8 @@ class World {
     // Ladeanzeige Variablen
     #loadingManager
     #loadingIndicatorElement
-    #loadingMessageElement
+    #loadingPercentageElement
+    #loadingCountsElement
     #loadingProgressBarElement
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
@@ -82,6 +83,12 @@ class World {
 
         // 3. Canvas DIESER Instanz zum Container hinzufügen
         this.#container.append(this.#renderer.domElement)
+
+        // --- Fade-In der Ladeanzeige ---
+        // Kleine Verzögerung, damit der Browser das Element rendernkann, bevor die Transition startet
+        setTimeout(() => {
+
+        }, 10) 
 
         // 4. Loading Manager Instanz erstellen und Callback definieren
         this.#setupLoadingManager(instanceIdLog)
@@ -193,9 +200,13 @@ class World {
         this.#loadingIndicatorElement.className = 'loading-indicator'
        // this.#loadingIndicatorElement.style.display = 'none' // Initial versteckt
 
-        this.#loadingMessageElement = document.createElement('div')
-        this.#loadingMessageElement.className = 'loading-message'
-        this.#loadingMessageElement.textContent = 'Loading 3D...'
+        this.#loadingPercentageElement = document.createElement('div')
+        this.#loadingPercentageElement.className = 'loading-message loading-percentage'
+        this.#loadingPercentageElement.textContent = 'Initial Loading' // Startwert
+
+        this.#loadingCountsElement = document.createElement('div')
+        this.#loadingCountsElement.className = 'loading-message loading-counts'
+        this.#loadingCountsElement.textContent = 'Loading 3D Assets' // Startwert oder z.B. '0 / ?'
 
         const progressBarContainer = document.createElement('div')
         progressBarContainer.className = 'loading-progress-bar-container'
@@ -205,7 +216,10 @@ class World {
         this.#loadingProgressBarElement.style.width = '0%'
 
         progressBarContainer.append(this.#loadingProgressBarElement)
-        this.#loadingIndicatorElement.append(this.#loadingMessageElement, progressBarContainer)
+        this.#loadingIndicatorElement.append(
+            this.#loadingPercentageElement, 
+            this.#loadingCountsElement, 
+            progressBarContainer)
         // Füge das Overlay zum Container DIESER Instanz hinzu
         this.#container.append(this.#loadingIndicatorElement)
     }
@@ -219,22 +233,33 @@ class World {
         this.#loadingManager.onStart = (url, itemsLoaded, itemsTotal) => {
             console.log(`[World${instanceIdLog}] Load Start: ${url} (${itemsLoaded}/${itemsTotal})`)
             if (this.#loadingIndicatorElement) {
-                this.#loadingMessageElement.textContent = `Loading 3DAsset...`
+                this.#loadingPercentageElement.textContent = `Initial Loading`
+                this.#loadingCountsElement.textContent = `Loading 3D Assets`
                 this.#loadingProgressBarElement.style.width = '0%'
                 this.#loadingProgressBarElement.style.backgroundColor = '#eee' // Zurücksetzen falls Fehler war
                 // this.#loadingIndicatorElement.style.display = 'flex' // Anzeigen
+                // Wichtig: Stelle sicher, dass 'hidden' Klasse entfernt ist, falls sie durch einen Fehler gesetzt wurde
+                this.#loadingIndicatorElement.classList.remove('hidden')
+                this.#loadingIndicatorElement.classList.add('visible')
             }
         }
 
         this.#loadingManager.onLoad = () => {
             console.log(`[World${instanceIdLog}] Load Complete!`)
             if (this.#loadingIndicatorElement) {
+                // Optional: Letzte Werte explizit auf 100% setzen
+                this.#loadingPercentageElement.textContent = '100%'
+                this.#loadingCountsElement.textContent = 'All Assets Loaded!' // Optional: Counts ausblenden
+                this.#loadingProgressBarElement.style.width = '100%'
+
                 // Kurze Verzögerung vor dem Ausblenden, damit man die 100% auch mal sieht
                 setTimeout(() => {
                     if (this.#loadingIndicatorElement) { // Erneute Prüfung falls dispose() dazwischen kam
-                        this.#loadingIndicatorElement.style.display = 'none'
+                        // Fade-Out auslösen
+                        this.#loadingIndicatorElement.classList.remove('visible') // Optional aber sauber
+                        this.#loadingIndicatorElement.classList.add('hidden') // Füge die Klasse 'hidden' hinzu, um es auszublenden
                     }
-                }, 300) // Verzögerung 300ms
+                }, 500) // Verzögerung 300ms
             }
         }
 
@@ -242,7 +267,8 @@ class World {
             const progress = itemsTotal > 0 ? (itemsLoaded / itemsTotal) * 100 : 0 // Prozentualer Fortschritt
             console.log(`[World${instanceIdLog}] Load Progress: ${url} (${itemsLoaded}/${itemsTotal}) = ${progress.toFixed(0)}%`)
             if (this.#loadingIndicatorElement) {
-                this.#loadingMessageElement.textContent = `Loading 3D: ${itemsLoaded} / ${itemsTotal}`
+                this.#loadingPercentageElement.textContent = `${progress.toFixed(0)}%`
+                this.#loadingCountsElement.textContent = `Assets: ${itemsLoaded} / ${itemsTotal}`
                 this.#loadingProgressBarElement.style.width = `${progress}%`
             }
         }
@@ -250,10 +276,14 @@ class World {
         this.#loadingManager.onError = (url) => {
             console.error(`[World${instanceIdLog}] Load Error: ${url}`)
             if (this.#loadingIndicatorElement) {
-                this.#loadingMessageElement.textContent = `Error loading: ${url.split('/').pop()}` // NUR Dateiname anzeigen
+                this.#loadingPercentageElement.textContent = 'Error!'
+                this.#loadingCountsElement.textContent = `Error loading: ${url.split('/').pop()}` // NUR Dateiname anzeigen
                 this.#loadingProgressBarElement.style.width = '100%'
                 this.#loadingProgressBarElement.style.backgroundColor = 'red' // Fehler anzeigen
                 // Nicht automatisch ausblenden bei Fehler
+                // Sicherstellen, dass es sichtbar ist
+                this.#loadingIndicatorElement.classList.remove('hidden')
+                this.#loadingIndicatorElement.classList.add('visible')
             }
         }
     }
@@ -516,7 +546,7 @@ class World {
             console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
             // Optional: Zeige Fehler im UI an (wird bereits teilweise durch onError des LoadingManagers behandelt)
             if (this.#loadingIndicatorElement) {
-                this.#loadingMessageElement.textContet = `Initialization Error! Check Console.`
+                this.#loadingPercentageElement.textContet = `Initialization Error! Check Console.`
                 this.#loadingProgressBarElement.style.width = '100%'
                 this.#loadingProgressBarElement.style.backgroundColor = 'red'
                 this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
@@ -622,6 +652,11 @@ class World {
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.container?.id})`
         console.log(`[World${instanceIdLog}] Dispose wird aufgerufen...`)
 
+        // Sicherstellen, dass die Klasse entfernt wird, falls dispose während des Fade-Outs aufgerufen wird
+        if (this.#loadingIndicatorElement) {
+            this.#loadingIndicatorElement.classList.remove('hidden', 'hidden'); // Zustand zurücksetzen
+        }
+
         // 1. Event Listener entfernen ---
         
         // PointerDown Listener vom Canvas entfernen
@@ -690,7 +725,8 @@ class World {
             this.#loadingIndicatorElement.parentElement.removeChild(this.#loadingIndicatorElement)
             console.log(`[World${instanceIdLog}] Ladeanzeige UI entfernt`)
             this.#loadingIndicatorElement = null // Referenz löschen
-            this.#loadingMessageElement = null
+            this.#loadingPercentageElement = null
+            this.#loadingCountsElement = null
             this.#loadingProgressBarElement = null
         }
 

@@ -41,7 +41,7 @@ canvas {
     left: 0; 
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.75);
+    background-color: rgba(0, 0, 0, 0.9);
     display: flex; /* Wird von JS auf 'flex' gesetzt zum ANzeigen */
     flex-direction: column;
     justify-content: center;
@@ -50,8 +50,18 @@ canvas {
     z-index: 10; /* Stellt sicher, dass das Overlayüber den Canvas liegt */
     pointer-events: none; /* Erlaubt Klicks DURCH das Overlay hindurch, falls nötig */
     font-family: sans-serif;
-    transition: opacity 0.3s ease-out; /* Sanftes Ein-/Ausblenden */
-    opacity: 1; /* Star-Opazität, wenn display: flex */
+    transition: opacity 0.4s ease-out; /* Sanftes Ein-/Ausblenden */
+    opacity: 0; /* Star-Opazität, wenn display: flex */
+    transition: opacity 0.4s ease-out;
+}
+
+.loading-indicator.visible {
+    opacity: 1;
+}
+
+.loading-indicator.hidden {
+    opacity: 0; /* Blendet es aus */
+    pointer-events: none;
 }
 
 .loading-message {
