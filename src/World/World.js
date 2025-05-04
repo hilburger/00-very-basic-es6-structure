@@ -65,7 +65,7 @@ class World {
         this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
-        const instanceIdLog = ` Instance ${this.#instanceId} (${this.container.id})` // Für bessere Logs
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
 
         // --- Instanzfelder initialisieren ---
@@ -185,25 +185,87 @@ class World {
         return renderer
     }
 
-    // HIER in diesem Abschnitt morgen weitermachen: 
+    // --- Methoden für Ladeanzeige ---
 
     #createLoadingIndicatorUI() {
-        
+        this.#loadingIndicatorElement = document.createElement('div')
+        this.#loadingIndicatorElement.className = 'loading-indicator'
+       // this.#loadingIndicatorElement.style.display = 'none' // Initial versteckt
+
+        this.#loadingMessageElement = document.createElement('div')
+        this.#loadingMessageElement.className = 'loading-message'
+        this.#loadingMessageElement.textContent = 'Loading 3D...'
+
+        const progressBarContainer = document.createElement('div')
+        progressBarContainer.className = 'loading-progress-bar-container'
+
+        this.#loadingProgressBarElement = document.createElement('div')
+        this.#loadingProgressBarElement.className = 'loading-progress-bar'
+        this.#loadingProgressBarElement.style.width = '0%'
+
+        progressBarContainer.append(this.#loadingProgressBarElement)
+        this.#loadingIndicatorElement.append(this.#loadingMessageElement, progressBarContainer)
+        // Füge das Overlay zum Container DIESER Instanz hinzu
+        this.#container.append(this.#loadingIndicatorElement)
     }
 
-    #setupLoadingManager() {
+    #setupLoadingManager(instanceIdLog) {
+        // Erstelle einen NEUEN Manager für DIESE Instanz
+        this.#loadingManager = new LoadingManager()
 
+        // --- Definiere die Callbacks für DIESEN Manager ---
+
+        this.#loadingManager.onStart = (url, itemsLoaded, itemsTotal) => {
+            console.log(`[World${instanceIdLog}] Load Start: ${url} (${itemsLoaded}/${itemsTotal})`)
+            if (this.#loadingIndicatorElement) {
+                this.#loadingMessageElement.textContent = `Loading 3DAsset...`
+                this.#loadingProgressBarElement.style.width = '0%'
+                this.#loadingProgressBarElement.style.backgroundColor = '#eee' // Zurücksetzen falls Fehler war
+                // this.#loadingIndicatorElement.style.display = 'flex' // Anzeigen
+            }
+        }
+
+        this.#loadingManager.onLoad = () => {
+            console.log(`[World${instanceIdLog}] Load Complete!`)
+            if (this.#loadingIndicatorElement) {
+                // Kurze Verzögerung vor dem Ausblenden, damit man die 100% auch mal sieht
+                setTimeout(() => {
+                    if (this.#loadingIndicatorElement) { // Erneute Prüfung falls dispose() dazwischen kam
+                        this.#loadingIndicatorElement.style.display = 'none'
+                    }
+                }, 300) // Verzögerung 300ms
+            }
+        }
+
+        this.#loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+            const progress = itemsTotal > 0 ? (itemsLoaded / itemsTotal) * 100 : 0 // Prozentualer Fortschritt
+            console.log(`[World${instanceIdLog}] Load Progress: ${url} (${itemsLoaded}/${itemsTotal}) = ${progress.toFixed(0)}%`)
+            if (this.#loadingIndicatorElement) {
+                this.#loadingMessageElement.textContent = `Loading 3D: ${itemsLoaded} / ${itemsTotal}`
+                this.#loadingProgressBarElement.style.width = `${progress}%`
+            }
+        }
+
+        this.#loadingManager.onError = (url) => {
+            console.error(`[World${instanceIdLog}] Load Error: ${url}`)
+            if (this.#loadingIndicatorElement) {
+                this.#loadingMessageElement.textContent = `Error loading: ${url.split('/').pop()}` // NUR Dateiname anzeigen
+                this.#loadingProgressBarElement.style.width = '100%'
+                this.#loadingProgressBarElement.style.backgroundColor = 'red' // Fehler anzeigen
+                // Nicht automatisch ausblenden bei Fehler
+            }
+        }
     }
 
-    // --- Methode zum Einrichten der Debug-Tools ---
-    #setupDebugTools() {
-        const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : '' // Sicherer Zugriff
+    // --- Methode zum Einrichten der Debug-Tools mit instanceIdLog---
+    #setupDebugTools(instanceIdLog) {
         console.log(`[World${instanceIdLog}] Setup Debug Tools...`)
 
         // 1. Stats.js (FPS-Anzeige)
         this.#stats = new Stats()
-        this.#stats.dom.style.position = 'absolute' // Positionieren
-        this.#stats.dom.style.left = '0px'
+        this.#stats.dom.style.position = 'absolute' // Positioniere
+        this.#stats.dom.style.left = 'auto' // rechts ausrichten
+        this.#stats.dom.style.right = '0px'
         this.#stats.dom.style.top = '0px'
         this.#stats.dom.style.zIndex = '100' // Über dem Canvas
         this.#container.appendChild(this.#stats.dom) // Füge zum spezifischen COntainer hinzu
@@ -218,6 +280,10 @@ class World {
         if (!sharedGui && GUI) { // Nur erstellen, wenn noch keine da ist und GUI importiert wurde
             sharedGui = new GUI()
             console.log('Globale lil-gui Instanz erstellt.')
+            // Verhindern, dass GUI OrbitControls blockiert
+            sharedGui.domElement.addEventListener('pointerdown', (e) => e.stopPropagation(), { capture: true})
+            sharedGui.domElement.addEventListener('wheel', (e) => e.stopPropagation(), { capture: true})
+
             // Optional: Position der globalen GUI anpassen
             // sharedGui.domElement.style.position = 'absolute'
                 // Beispiel oben rechts fixiert
@@ -230,10 +296,10 @@ class World {
         
         // Nur fortfahren, wenn GUI existiert
         if (this.#gui) {
-            // Eindeutigen Ordner pro Instanz hinzufügen
-            const instanceName = this.#container?.id || `Viewer_${guiRefCount}` // Sicherer Zugriff
+            // Ordnername mit Instanz-ID
+            const folderName = `Viewer ${this.#instanceId} (${this.#container.id})`
             // Erstelle Ordner für diese Instanz
-            const instanceFolder = this.#gui.addFolder(instanceName)
+            const instanceFolder = this.#gui.addFolder(folderName)
 
             // Hintergrundfarbe (Instanz-spezifisch)
             // Nutzt this.#scene
@@ -251,6 +317,9 @@ class World {
                 // Füge Regler zum Instanz-Ordner hinzu
                 instanceFolder.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
             }
+            // Füge AxesHelper-Toggle hinzu
+            instanceFolder.add(this.#axesHelper, 'visible').name('SHow Axes')
+
             // instanceFolder.open() // Diesen Folder öffnen? Besser nicht bei vielen Instanzen.
             console.log(`[World${instanceIdLog}] GUI-Ordner hinzugefügt.`)
         } else {
@@ -259,7 +328,7 @@ class World {
     }
 
     // Interaktion (Raycasting bei Klick) einrichten
-    #setupInteraction() {
+    #setupInteraction(instanceIdLog) {
         const canvas = this.#renderer.domElement // Das canvas-Element via Instanz-Variable holen
 
         // Wichtig: WIr brauchen eine gebundene Referenz zum Listener, damit wir ihn später entfernen können
@@ -268,10 +337,12 @@ class World {
 
         // Füge den gebundenen istener hinzu
         canvas.addEventListener('pointerdown', this.boundPointerDownHandler)
-        console.log(`[World${this.#container?.id ? ` ID: ${this.#container.id}` : ''}] Pointerdown Listener hinzugefügt.`)
+        console.log(`[World${instanceIdLog}] Pointerdown Listener hinzugefügt.`)
     }
 
-    #handlePointerDown(event) {
+    #handlePointerDown(event) { // instanceIDLog ist hier nicht direkt verfügbar, holen wir aus this.#instanceIdLog
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})`
+
         // 1. Mauskoordination berechnen (normalisiert: -1 bis +1)
         // Nutzt this.#renderer und this.#mouse
         const bounds = this.#renderer.domElement.getBoundingClientRect() // Position/Größe des Canvas der Instanz holen
@@ -283,47 +354,31 @@ class World {
 
         // 3. Schnittpunkte finden (nur mit unseren klickbaren Objekten!)
         // Nutzt this.#raycaster und this.#clickableObjects
+        // Nur klickbare Objekte prüfen, die NICHT die Standard-Plane sind (optional)
+        const objectsToCheck = this.#clickableObjects.filter(obj => obj !== this.#scene.getObjectByName('GrpundPlane'))
         const intersects = this.#raycaster.intersectObjects(this.#clickableObjects, true) // true = rekursiv (auch Kinder)
 
         if (intersects.length > 0) {
             // Treffer! Nimm das vorderste Objekt.
             const intersection = intersects[0]
-            const clickedObject = intersection.object
+            let clickedObject = intersection.object // Das tatsächlich getroffene Mesh
 
             // Finde das Top-Level-Objekt, das wir zu #clickableObjects hinzugefügt haben 
             // (Logik wie gehabt, nutzt this.#clickableObjects und this.#scene)
             // (nützlich, wenn man auf ein Kind-Mesh einer Gruppe klickt)
             let topLevelClickedObject = clickedObject
-            while (topLevelClickedObject.parent && topLevelClickedObject.parent !== this.#scene) {
-                // Prüfen, ob ein Vorfahre in clickableObjects ist
-                if (this.#clickableObjects.includes(topLevelClickedObject.parent)) {
-                    topLevelClickedObject = topLevelClickedObject.parent
-                    break // Optional: Nur das erste Top-Level nehmen
-                }
-                // Wenn kein klickbarer Vorfahre gefunden wird, bis zur Szene hochgehen
-                // und das direkt getroffene Objekt als Basis nehmen.
-                // Für das GLTF ist das oft ein Kind-Mesh, wir wollen aber die Gruppe.
-                // Diee Logik kann man verfeinern! Vorerst nehmen wir aber das Top-Level
-                if (this.#clickableObjects.includes(topLevelClickedObject)) {
-                    break // Das Objekt selbst ist klickbar
-                }
+            //Gehe nur hoch, wenn das getroffene Objekt selbst NICHT in der Liste ist
+            while (!this.#clickableObjects.includes(topLevelClickedObject) && topLevelClickedObject.parent && topLevelClickedObject.parent !== this.#scene) {
                 topLevelClickedObject = topLevelClickedObject.parent
-
-                // Sicherheits-Check gegen Endlosschleife (sollte nicht passieren)
-                if (topLevelClickedObject === this.#scene) {
-                    topLevelClickedObject = clickedObject // Fallback zum direkt getroffenen
-                    break
-                }
             }
 
             // 2. Check/Fallback:S
             // telle sicher, dass wir tatsächlich ein Objekt das zu Liste der klickbaren Objekt (clickable List) hinzugefügt worden ist referenzieren!
             if (!this.#clickableObjects.includes(topLevelClickedObject)) {
-                topLevelClickedObject = clickedObject // Fallback falls die vorige Logik fehlschlägt
-                console.warn("Konnte Top-Level klickbares Objekt nicht sicher bestimmen, verwende direkt getroffenes.")
+                console.warn(`[World${instanceIdLog}] Top-Level kickbares Objekt nicht gefunden, verwende direktgetroffenes: `, clickedObject.name)
+                topLevelClickedObject = clickedObject // Fallback, sollte bei GLTF eigentlich nicht passieren, wenn das Hauptojekt hinzugefügt wurde. 
             }
 
-            const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
             console.log(`[World${instanceIdLog}] Raycast hit:`, clickedObject.name || clickedObject.uuid ) // Das tatsächlich getroffene Mesh/etc.
             console.log(`[World${instanceIdLog}] Top-Level Clickable:`, topLevelClickedObject.name || topLevelClickedObject.uuid)
 
@@ -336,16 +391,17 @@ class World {
                 distance: intersection.distance, // Entfernung vom Klick zur Cam
                 face: intersection.face, // Welche Fläche getroffen wurde
                 originalEvent: event, // Das ursprüngliche Maus-Event
-                worldInstance: this // Referenz zur World-Instanz mitsenden
+                worldInstance: this, // Referenz zur World-Instanz mitsenden
+                instaceId: this.#instanceId // ID explizit mitsenden
             })
         }
     }
 
 
-    // --- Asynchrone Methode zum Initialisieren/Laden von Assets ---
+    // --- Asynchrone Methode zum Initialisieren/Laden von Assets -> übergibt alles an LoadingManager ---
     async init(itemConfig) {
-        const instanceIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
-        console.log(`[World${instanceIdLog}] init gestartet mit Item: `, itemConfig)
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})`
+        console.log(`[World${instanceIdLog}] init gestartet mit Item: `, itemConfig)   // ----------------------------------
 
         // Eingangs-Check für das einzelne Konfigurationsobjekt
         if (!itemConfig || !itemConfig.type) {
@@ -362,7 +418,7 @@ class World {
                     // 1. Textur zuerst laden
                     let texture = null
                     if (itemConfig.assetUrl) {
-                        texture = await loadTexture(itemConfig.assetUrl)
+                        texture = await loadTexture(itemConfig.assetUrl, this.#loadingManager)
                         console.log(`[World${instanceIdLog}] Textur für '${itemConfig.name || 'Cube'}' geladen.`)
                     }
 
@@ -377,13 +433,13 @@ class World {
 
                 case 'plane': // Kann jetzt auch per Config kommen (optional)
                     // Erstelle eine Instanz der Plane-Klasse
-                    loadedObject = new Plane(itemConfig)
+                    loadedObject = new Plane(itemConfig) // Plane lädt keine Assets, braucht keinen Manager
                     console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Plane'}' erstellt.`)
                     break
 
                 case 'gltf': 
                     // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
-                    loadedObject = await loadGltf(itemConfig.assetUrl)
+                    loadedObject = await loadGltf(itemConfig.assetUrl, this.#loadingManager)
                     console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'GLTF'}' geladen.`)
                     break
 
@@ -439,13 +495,13 @@ class World {
                 this.#scene.add(loadedObject)
                 console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt.`)
 
-                // Optional: Füge es zur Liste der klickbaren Objekte hinzu
+                // Optional: Füge nur das konfigurierte Hauptobjekt zur Liste der klickbaren Objekte hinzu
                 // (Vorbereitung für spätere Interaktion)
                 if (this.#clickableObjects) { // Sicherstellen, dass das Array existiert
                     this.#clickableObjects.push(loadedObject)
                     console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur clickableObjects hinzugefügt.`)
                 } else {
-                    console.warn(`#clickableObjects existiert nicht beim Hunzufügen von: `, loadedObject.name)
+                    console.warn(`[World${instanceIdLog}] #clickableObjects existiert nicht beim Hunzufügen von: `, loadedObject.name)
                 }
 
                 console.log(`Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt und konfiguriert.`)
@@ -457,6 +513,13 @@ class World {
             }
         } catch (error) {
             console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
+            // Optional: Zeige Fehler im UI an (wird bereits teilweise durch onError des LoadingManagers behandelt)
+            if (this.#loadingIndicatorElement) {
+                this.#loadingMessageElement.textContet = `Initialization Error! Check Console.`
+                this.#loadingProgressBarElement.style.width = '100%'
+                this.#loadingProgressBarElement.style.backgroundColor = 'red'
+                this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
+            }
             throw error // Fehler weiterwerfen, wird in main.js gefangen
         }
         
@@ -464,29 +527,26 @@ class World {
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
 
         // Event Listener hier erst registrieren, wenn Objekt sicher hinzugefügt wurde
-        this.#setupEventListeners() // Rufe die Methode auf, die die Listener anmeldet
+        this.#setupEventListeners(instanceIdLog) // Rufe die Methode auf, die die Listener anmeldet
     }
 
     // --- Methode zum Registrieren der Listener
-    #setupEventListeners() {
+    #setupEventListeners(instanceIdLog) {
         // Speichere die gebundene Referenz zum Callback für späteres .off() in dispose()
         // Die Funktion selbst ist eine Pfeilfunktion, bind(this) ist nicht nötig
         // aber wir speichern sie trotzdem für .off()
         this.boundObjectClickedHandler = (eventData) => {
             // Prüfen, ob das Event für DIESE Instanz relevant ist
-            // Vergleiche die mitgesendete WorldInstance mit der aktuellen Instanz
-            if (eventData.worldInstance !== this) {
+            // Vergleiche die mitgesendete Instanz mit der aktuellen Instanz
+            if (eventData.instanceId !== this.#instanceId) {
                 // console.log(`[World Instance ${this.#container?.id || '?'}] Ignoriere Klick-Event von anderer Instanz.`)
                 return // Nicht auf Events von anderen Instanzen reagieren
             }
 
-            // Hole Instanz-ID für Log-Ausgabe
-            const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
             console.log(
-                `%cEVENT BUS (Instanz${instanceIdLog}): Objekt geklickt!%c
+                `%c[World${instanceIdLog} EventBus:Objekt geklickt!%c
                 Name: ${eventData.name || '(kein Name)'}
-                UUID: ${eventData.uuid}
-                Position: ${eventData.point.x.toFixed(2)}, ${eventData.point.y.toFixed(2)}, ${eventData.point.z.toFixed(2)}`,
+                UUID: ${eventData.uuid}`,
                 'color: blue; font-weight: bold;',
                 'color: black;'
             )
@@ -512,7 +572,6 @@ class World {
         eventBus.on('objectClicked', this.boundObjectClickedHandler)
 
         // Optional: Log für Bestätigung
-        const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
         console.log(`[World${instanceIdLog}] 'objectClicked' Event Listener registriert.`)
 
         // Hier könnten später weitere Listener für DIESE Instanz registriert werden.
@@ -559,7 +618,7 @@ class World {
      * 
      */
     dispose() {
-        const instanceIdLog = this.#container?.id ? ` ID: ${this.#container.id}` : ''
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.container?.id})`
         console.log(`[World${instanceIdLog}] Dispose wird aufgerufen...`)
 
         // 1. Event Listener entfernen ---
@@ -604,13 +663,15 @@ class World {
             // GUI Ordner entfernen (von der geteilten GUI)
             if (this.#gui && sharedGui === this.#gui) { // Nur, wenn diese Instanz eine globale GUI hat
                 guiRefCount-- // Referenzzähler reduzieren
-                const instanceName = this.#container?.id || `Viewer_${guiRefCount + 1}` // Name rekonstruieren (besser speichern!)
+                const folderName = `Viewer ${this.#instanceId} (${this.#container?.id})`
                 try {
                     // Finde den Ordner dieser Instanz und zerstöre ihn
                     const folder = this.#gui.folders.find(f => f._title === instanceName)
                     if (folder) {
                         folder.destroy()
-                        console.log(`[World${instanceIdLog}] GUI Ordner '${instanceName}' entfernt.`)
+                        console.log(`[World${instanceIdLog}] GUI Ordner '${folderName}' entfernt.`)
+                    } else {
+                        console.warn(`[World${instanceIdLog}] GUI Ordner '${folderName} nicht gefunden zum Entfernen`)
                     }
                 } catch (e) { console.warn("Fehler beim Entfernen des GUI-Ordners:", e) }
 
@@ -623,12 +684,18 @@ class World {
             }
         }
 
+        // 4. Ladeanzeige-UI entfernen
+        if (this.#loadingIndicatorElement && this.#loadingIndicatorElement.parentElement) {
+            this.#loadingIndicatorElement.parentElement.removeChild(this.#loadingIndicatorElement)
+            console.log(`[World${instanceIdLog}] Ladeanzeige UI entfernt`)
+            this.#loadingIndicatorElement = null // Referenz löschen
+            this.#loadingMessageElement = null
+            this.#loadingProgressBarElement = null
+        }
 
-        // 4. Objekte aus Szenen entfernen und Ressourcen freigeben (wichtig!)---
+        // 5. Objekte aus Szenen entfernen und Ressourcen freigeben (wichtig!)---
         if (this.#scene) {
-            console.log(`[World${instanceIdLog}] Bereinige Szene`)
-            // [...this.#scene.children].forEach(obj => { // Iteriere über Kopie
-            // Alternative zum Spread-Operator
+            console.log(`[World${instanceIdLog}] Bereinige Szene...`)
             const sceneChildren = Array.from(this.#scene.children)
             sceneChildren.forEach(obj => { // Iteriere über Kopie
                 this.#scene.remove(obj)
@@ -636,47 +703,47 @@ class World {
                 // Versuche Geometrie, Material und Texturen freizugeben
                 // Dies ist eine vereinfachte Verison - kompexe Modelle brauchen ggf. mehr
                 try {
-                    if (obj.geometry) obj.geometry.dispose()
+                    obj.traverse?.(child => { // Gehe auch durch die Kinder (wichtig für GLTF)
+                        if (child.geometry) child.geometry.dispose()
 
-                    if (obj.material) {
-                        if (Array.isArray(obj.material)) {
-                            obj.material.forEach(material => {
-                                if (material.map) material.map.dispose()
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(material => {
+                                    if (material.map) material.map.dispose()
+                                    // Weitere Texturtypen prüfen
+                                    material.dispose()
+                                })
+                            } else {
+                                if (child.material.map) obj.material.map.dispose()
                                 // Weitere Texturtypen prüfen
-                                material.dispose()
-                            })
-                        } else {
-                            if (obj.material.map) obj.material.map.dispose()
-                            // Weitere Texturtypen prüfen
-                            obj.material.dispose()
+                                child.material.dispose()
+                            }
                         }
-                    }
+                    })
                 } catch (e) { console.warn("Fehler beim Disposen von Objekt-Ressourcen:", obj.name || obj.uuid, e)}
 
                 /** Optional: Rekursive Bereinigung für Gruppen (wenn Modelle Kinder haben)
                  * function disposeNode(node) { ... }
                  * disposeNode(obj)
                  * */
-                
             })
             console.log(`[World${instanceIdLog}] Szene geleert.`)
         }
 
-
-        // 5. Renderer disposen (gibt WebGL Kontext frei) ---
+        // 6. Renderer disposen (gibt WebGL Kontext frei) ---
         this.#renderer?.dispose() // Sicherer Aufruf
         if (this.#renderer?.domElement.parentElement) {
             this.#renderer.domElement.parentElement.removeChild(this.#renderer.domElement)
         }
         console.log(`[World${instanceIdLog}] Renderer disposed.`)
 
-        // 6. OrbitControls disposen (falls nötig - hat keine explizite dispose-Methode, aber Listenerwerden durch loop-Stop inaktiv) ---
-        this.#controls?.dispose?.() // Ruft dispose auf, falls es existiert
+        // 7. OrbitControls disposen (falls nötig - hat keine explizite dispose-Methode, aber Listenerwerden durch loop-Stop inaktiv) ---
+        this.#controls = null // Einfach Referenz entfernen
 
         
         console.log(`[World${instanceIdLog}] Dispose abgeschlossen!`)
 
-        // 7. Alle Instanz-Referenzen löschen (optional, hilft Garbage Colector) ---
+        // 8. Alle Instanz-Referenzen löschen (optional, hilft Garbage Colector) ---
         this.#camera = null
         this.#scene = null
         this.#renderer = null
@@ -689,6 +756,7 @@ class World {
         this.#mouse = null
         this.#stats = null
         this.#gui = null
+        this.#loadingManager = null
         this.#axesHelper = null
         this.#container = null // Wichtig: Referenz auf DOM-Element löschen
         this.boundPointerDownHandler = null

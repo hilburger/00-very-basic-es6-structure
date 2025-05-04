@@ -37,7 +37,7 @@ async function loadGltf(url, manager) {
     // Erstelle IMMER einen NEUEN GLTFLoader mit dem übergebenen Manager
     const gltfLoader = new GLTFLoader(manager) // Manager übergeben!
     // Setze den (globalen) DracoLoader für DIESE Instanz des GLTFLoader
-    gtltfLoader.setDRACOLoader(dracoLoader)
+    gltfLoader.setDRACOLoader(dracoLoader)
 
     try {
         const loadedData = await gltfLoader.loadAsync(url)
