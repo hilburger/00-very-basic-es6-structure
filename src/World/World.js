@@ -1,7 +1,7 @@
 // src/World/World.js
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
-import { Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer} from 'three' // AxesHelper und Color sind nur für Debugging
+import { LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer} from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
 import eventBus from './systems/EventBus.js'
@@ -16,7 +16,9 @@ import { Loop } from './systems/Loop.js'
 // Importiere OrbitControls aus dem 'examples'-Verzeichnis von Three.js
 // Vite/npm kümmert sich darum, den richtigen Pfad aufzulösen
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-// -- Importiere Ladefunktionen  ---
+
+// -- Importiere Asset Ladefunktionen  ---
+// Die Funktionen erwarten jetzt optional einen Manager
 import { loadGltf, loadTexture } from './systems/assetLoader.js'
 
 // Komponenten-Klassen
@@ -44,6 +46,7 @@ class World {
     #raycaster // Instanzvariable für Raycasting
     #mouse // Für normalisierte Mauskoordinaten
     #container // Wird im Konsturktor gesetzt
+    #instanceId
 
     // Variablen für Debug-Tools
     #isDebugMode = false // Initialisiert, standardmäßig deaktiviert
@@ -51,11 +54,18 @@ class World {
     #gui // Für lil-gui Instanz
     #axesHelper
 
-    // Der Constructor nimmt den HTML-Container (ein DOM-Element) entgegen
-    constructor(container, isDebugMode = false) {
+    // Ladeanzeige Variablen
+    #loadingManager
+    #loadingIndicatorElement
+    #loadingMessageElement
+    #loadingProgressBarElement
+
+    // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
+    constructor(container, isDebugMode = false, instanceId) {
         this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
-        const instanceIdLog = this.#container.id ? ` ID: ${this.#container.id}` : '' // Für bessere Logs
+        this.#instanceId = instanceId // Speichere die Instanz-ID
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
 
         // --- Instanzfelder initialisieren ---
@@ -74,7 +84,13 @@ class World {
         // 3. Canvas DIESER Instanz zum Container hinzufügen
         this.#container.append(this.#renderer.domElement)
 
-        // 4. OrbitControls für DIESE Instanz erstellen
+        // 4. Loading Manager Instanz erstellen und Callback definieren
+        this.#setupLoadingManager(instanceIdLog)
+
+        // 5. Ladeanzeigen-UI erstellen und zum Container hinzufügen
+        this.#createLoadingIndicatorUI()
+
+        // 6. OrbitControls für DIESE Instanz erstellen
         // Wichtig: Übergibt jetzt Instanzvariablen!
         // Sie benötigen die Kamera und das COM-Element (canvas), auf das sie hören sollen
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement)
@@ -91,22 +107,22 @@ class World {
             // this.#controls.maxDistance = 15 // Maximaler Zoom-Abstand
             // this.#controls.maxPolarAngle = Math.PI * 0.5 // Verhindert, dass man untzer die Bodenplatte/-ebene schaut
 
-        // 5. Animations-Loop für DIESE Instanz erstellen
+        // 7. Animations-Loop für DIESE Instanz erstellen
         this.#loop = new Loop(this.#camera, this.#scene, this.#renderer)
-        // 5. b) Füge Controls DIESER Instanz zum Loop hinzu
+        // 7. b) Füge Controls DIESER Instanz zum Loop hinzu
             // OrbitControls müssen aktualisiert werden, besonders, wenn Damping aktiviert ist
         this.#loop.updatables.push(this.#controls)
         
-        // 6. Resizer für DIESE Instanz hinzufügen, um auf Größenänderungen des Viewports/Fensters zu reagieren
+        // 8. Resizer für DIESE Instanz hinzufügen, um auf Größenänderungen des Viewports/Fensters zu reagieren
         // Wichtig: Übergibt jetzt Instanzvariablen!
         this.#resizer = new Resizer(this.#container, this.#camera, this.#renderer)
 
-        // 7. Lichter für DIESE Instanz erstellen und hinzufügen
+        // 9. Lichter für DIESE Instanz erstellen und hinzufügen
         this.#lights = createLights() // createLights bleibt externe Funktion
         // Der Spread-Operator '(...)' fügt alle Elemente des lights-Arrays einzeln hinzu
         this.#scene.add(...this.#lights) // Füge zur Instanz-Szene hinzu
 
-        // 8. Erstelle die 3D-Objekte und füge sie der DIESER Instanz hinzu ---
+        // 10. Erstelle die 3D-Objekte und füge sie der DIESER Instanz hinzu ---
         
         // Ebene für DIESE Instanz hinzufügen
         const plane = new Plane() // Erstellt Instanz der TNT-Plane-Klasse
@@ -121,7 +137,7 @@ class World {
             // cube.tick = (delta) => { cube.rotation.y += delta } // Beispiel-Animation
             // loop.updatables.push(cube)
 
-        // 9. --- DEBUG-Tools Initialisierung (nur, wenn this.#isDebugMode true ist) ---
+        // 11. --- DEBUG-Tools Initialisierung (nur, wenn this.#isDebugMode true ist) ---
         // Erfolgt NACHDEM Szene, Lichter etc. existieren
         if (this.#isDebugMode) {
             this.#setupDebugTools() /// Ruft die interne Methode auf
@@ -131,8 +147,8 @@ class World {
         }
         // ---DEBUG-Tools ENDE ---
 
-        // Interaktion/Listener für DIESE Instanzeinrichten
-        this.#setupInteraction() // Methode jetzt interne Methode auf
+        // Interaktion/Listener für DIESE Instanzeinrichten (Raycasting Listener)
+        this.#setupInteraction(instanceIdLog) // Übergib ID für Logs
 
         console.log(`[World${instanceIdLog}] Konstruktor abgeschlossen.`)
     }
@@ -167,6 +183,16 @@ class World {
         renderer.outputColorSpace = 'srgb' // Wichtiges Farbsetting
         // Größe wird durch Resizer gesetzt, nicht hier
         return renderer
+    }
+
+    // HIER in diesem Abschnitt morgen weitermachen: 
+
+    #createLoadingIndicatorUI() {
+        
+    }
+
+    #setupLoadingManager() {
+
     }
 
     // --- Methode zum Einrichten der Debug-Tools ---
