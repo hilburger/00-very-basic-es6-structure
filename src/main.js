@@ -32,7 +32,7 @@ async function main() {
         // Optional: Gib dem Container eine ID, falls er keine hat
         // (nützlich, für Debugging)
         if (!containerElement.id) {
-            containerElement.id = 'threejs-viewer-${instanceId}'
+            containerElement.id = `threejs-viewer-${instanceId}`
         }
 
         try {
@@ -44,23 +44,30 @@ async function main() {
                 continue // Nächsten Container versuchen
             }
 
-            let itemConfig = null
+            let mainConfig = null
             try {
-                itemConfig = JSON.parse(configString) // JSON parsen
+                mainConfig = JSON.parse(configString) // JSON parsen
             } catch(e) {
                 console.error(`Fehler beim Parsen von data-config für Container ${instanceId} (${containerElement.id}):`, configString, e)
                 instanceCounter++
                 continue // Nächsten Container versuchen
             }
 
+            // Validierung: Prüfen, ob die erwartete Struktur vorhanden ist
+            if (!mainConfig || !Array.isArray(mainConfig.sceneItems)) {
+                console.error(`Ungültige Struktur in data-config für Container ${instanceId} (${containerElement.id}): "sceneItems"-Array fehlt oder ist kein Array.`, mainConfig)
+                instanceCounter++
+                continue
+            }
+
             // World-Instanz für DIESEN Container erstellen
-            // WICHTIG: Wir übergeben die Instanz-spezifische Konfiguration (itemConfig)
+            // WICHTIG: Wir übergeben die Instanz-spezifische Konfiguration (mainConfig)
             // und das Debug-FLag
             const world = new World(containerElement, isDebugMode, instanceId)
 
             // Asynchrone Initialisierung für DIESE Instanz aufrufen
-            // Die init-Methode muss angepasst werden, um nur EIN itemConfig zu erwarten!
-            await world.init(itemConfig) // Übergibt das Objekt aus data-config
+            // Die init-Methode muss angepasst werden, um nur EIN mainConfig zu erwarten!
+            await world.init(mainConfig.sceneItems) // Übergibt das Array der Objektkonfigurationen
                 
             // Loop für DIESE Instanz starten
             world.start()
