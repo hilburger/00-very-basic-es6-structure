@@ -87,7 +87,9 @@ class World {
         // --- Fade-In der Ladeanzeige ---
         // Kleine Verzögerung, damit der Browser das Element rendernkann, bevor die Transition startet
         setTimeout(() => {
-
+            if (this.#loadingIndicatorElement) {
+                this.#loadingIndicatorElement.classList.add('visible')
+            }
         }, 10) 
 
         // 4. Loading Manager Instanz erstellen und Callback definieren
@@ -102,7 +104,7 @@ class World {
         // Sie benötigen die Kamera und das COM-Element (canvas), auf das sie hören sollen
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement)
         // Aktiviere Dämpfung für sanfteres Auslaufen der Bewegung beim Loslassen der Maus
-        this.#controls.target.set(0, 0.75, 0)
+            // this.#controls.target.set(0, 0.75, 0) // Kann weg
         this.#controls.enableDamping = true
         this.#controls.dampingFactor = 0.05 // Stärke der Dämpfung
         // WICHTIG: Damit Raycasting und OrbitControls nicht kollidieren, 
@@ -350,7 +352,7 @@ class World {
                 instanceFolder.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
             }
             // Füge AxesHelper-Toggle hinzu
-            instanceFolder.add(this.#axesHelper, 'visible').name('SHow Axes')
+            instanceFolder.add(this.#axesHelper, 'visible').name('Show Axes')
 
             // instanceFolder.open() // Diesen Folder öffnen? Besser nicht bei vielen Instanzen.
             console.log(`[World${instanceIdLog}] GUI-Ordner hinzugefügt.`)
@@ -387,8 +389,8 @@ class World {
         // 3. Schnittpunkte finden (nur mit unseren klickbaren Objekten!)
         // Nutzt this.#raycaster und this.#clickableObjects
         // Nur klickbare Objekte prüfen, die NICHT die Standard-Plane sind (optional)
-        const objectsToCheck = this.#clickableObjects.filter(obj => obj !== this.#scene.getObjectByName('GrpundPlane'))
-        const intersects = this.#raycaster.intersectObjects(this.#clickableObjects, true) // true = rekursiv (auch Kinder)
+        const objectsToCheck = this.#clickableObjects.filter(obj => obj !== this.#scene.getObjectByName('GroundPlane'))
+        const intersects = this.#raycaster.intersectObjects(objectsToCheck, true) // true = rekursiv (auch Kinder)
 
         if (intersects.length > 0) {
             // Treffer! Nimm das vorderste Objekt.
@@ -424,142 +426,140 @@ class World {
                 face: intersection.face, // Welche Fläche getroffen wurde
                 originalEvent: event, // Das ursprüngliche Maus-Event
                 worldInstance: this, // Referenz zur World-Instanz mitsenden
-                instaceId: this.#instanceId // ID explizit mitsenden
+                instanceId: this.#instanceId // ID explizit mitsenden
             })
         }
     }
 
 
     // --- Asynchrone Methode zum Initialisieren/Laden von Assets -> übergibt alles an LoadingManager ---
-    async init(itemConfig) {
+    async init(sceneItemConfigs) {
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})`
-        console.log(`[World${instanceIdLog}] init gestartet mit Item: `, itemConfig)   // ----------------------------------
+        console.log(`[World${instanceIdLog}] init gestartet mit ${sceneItemConfigs.length} Item(s).`)
 
-        // Eingangs-Check für das einzelne Konfigurationsobjekt
-        if (!itemConfig || !itemConfig.type) {
-            console.error(`[World${instanceIdLog}] Ungültige oder fehlende Konfiguration für init().`)
-            throw new Error(`Ungültige Konfiguration für Viewer-Instanz ${instanceIdLog}.`)
-        }
+        // Array zum Sammeln der erfolgreich geladenen Objekte
+        const loadedSceneObjects = [] 
+        this.#clickableObjects =[] // Klickbare Objekte für diese Instanz zurücksetzen
 
-        let loadedObject = null
-        // Fehlerbehandlung für das Laden dieses EINEN Objekts
-        try {
-            // Entscheide basierend auf dem Typ, was zu tun ist
-            switch (itemConfig.type) {
-                case 'cube': 
-                    // 1. Textur zuerst laden
-                    let texture = null
-                    if (itemConfig.assetUrl) {
-                        texture = await loadTexture(itemConfig.assetUrl, this.#loadingManager)
-                        console.log(`[World${instanceIdLog}] Textur für '${itemConfig.name || 'Cube'}' geladen.`)
+        // Schleife über alle Objektkonfigurationen im Array
+        for (const itemConfig of sceneItemConfigs) {
+            console.log(`[World${instanceIdLog}] Verarbeitet Item:`, itemConfig)
+            let loadedObject = null
+
+            // Fehlerbehandlung pro Objekt
+            try {
+                // Entscheide basierend auf dem Typ, was zu tun ist
+                switch (itemConfig.type) {
+                    case 'cube': 
+                        // 1. Textur zuerst laden
+                        let texture = null
+                        if (itemConfig.assetUrl) {
+                            texture = await loadTexture(itemConfig.assetUrl, this.#loadingManager)
+                            console.log(`[World${instanceIdLog}] Textur für '${itemConfig.name || 'Cube'}' geladen.`)
+                        }
+
+                        // 2. Cube-Instanz erstellen und Konfiguration übergeben
+                        // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
+                        loadedObject = new Cube({
+                            ...itemConfig, // Kopiert alle Eigenschaften von item (name, size, color etc.)
+                            map: texture // Fügt die geladene Textur als 'map' hinzu
+                        })
+                        console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Cube'}' instanziert.` )
+                        break // Wichtig!
+
+                    case 'plane': // Kann jetzt auch per Config kommen (optional)
+                        // Erstelle eine Instanz der Plane-Klasse
+                        loadedObject = new Plane(itemConfig) // Plane lädt keine Assets, braucht keinen Manager
+                        console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Plane'}' erstellt.`)
+                        break
+
+                    case 'gltf': 
+                        if (!itemConfig.assetUrl) {
+                            console.error(`[World${instanceIdLog}] Fehlende 'assetUrl' für GLTF-Objekt:`, itemConfig)
+                            throw new Error(`Fehlende 'assetUrl' für GLTF-Objekt ${itemConfig.name || ''}`)
+                        }
+                        // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
+                        loadedObject = await loadGltf(itemConfig.assetUrl, this.#loadingManager)
+                        console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'GLTF'}' geladen.`)
+                        break
+
+                    // Hier können später weitere Typen hinzugefügt werden
+                    // --- Zukünftig denkbare Erweiterung ---
+                    // case 'ambientLight':
+                    //     loadedObject = createAmbientLight(itemConfig.color, itemConfig.intensity) // Angenommen, es gäde ein createAmbientLight
+                    //     console.log('AmbientLight erstellt')
+                    //     break
+                    // case 'directionalLight':
+                    //  //...
+                    //    // break
+
+                    default:
+                        console.warn(`[World${instanceIdLog}] Unbekannter Objekttyp in Konfiguration: ${itemConfig.type}`)
+                        // Wir werfen hier keinen Fehler, u, andere Objekte nicht zu blockieren
+                        continue // SPringe zum nächsten itemConfig in der Schleife
                     }
 
-                    // 2. Cube-Instanz erstellen und Konfiguration übergeben
-                    // Wir übergeben das ganze 'item' Objekt und die geladene Textur als 'map'
-                    loadedObject = new Cube({
-                        ...itemConfig, // Kopiert alle Eigenschaften von item (name, size, color etc.)
-                        map: texture // Fügt die geladene Textur als 'map' hinzu
-                    })
-                    console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Cube'}' instanziert.` )
-                    break // Wichtig!
+                // Wenn ein Objekt erfolgreich geladen/erstellt wurde
+                if (loadedObject) {
+                    // Konfiguration anwenden
+                    if (itemConfig.name) loadedObject.name = itemConfig.name
 
-                case 'plane': // Kann jetzt auch per Config kommen (optional)
-                    // Erstelle eine Instanz der Plane-Klasse
-                    loadedObject = new Plane(itemConfig) // Plane lädt keine Assets, braucht keinen Manager
-                    console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Plane'}' erstellt.`)
-                    break
+                    // Setze Position (falls in Config definiert)
+                    if (itemConfig.position) {
+                        loadedObject.position.set(
+                            itemConfig.position.x || 0, 
+                            itemConfig.position.y || 0, 
+                            itemConfig.position.z || 0
+                        )
+                    }
 
-                case 'gltf': 
-                    // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
-                    loadedObject = await loadGltf(itemConfig.assetUrl, this.#loadingManager)
-                    console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'GLTF'}' geladen.`)
-                    break
+                    // Rotation nur setzen, wenn nicht in der Komponente selbst gesetzt (wie bei Plane)
+                    if (itemConfig.rotation && itemConfig.type !== 'plane') {
+                        loadedObject.rotation.set(
+                            itemConfig.rotation.x || 0, 
+                            itemConfig.rotation.y || 0, 
+                            itemConfig.rotation.z || 0
+                        )
+                    }
 
-                // Hier können später weitere Typen hinzugefügt werden
-                // --- Zukünftig denkbare Erweiterung ---
-                // case 'ambientLight':
-                //     loadedObject = createAmbientLight(itemConfig.color, itemConfig.intensity) // Angenommen, es gäde ein createAmbientLight
-                //     console.log('AmbientLight erstellt')
-                //     break
-                // case 'directionalLight':
-                //  //...
-                //    // break
+                    // Setze Skalierung (falls in Config definiert
+                    // Nutze standardwert 1, falls nichts angegeben
+                    const scaleX = itemConfig.scale?.x ?? 1
+                    const scaleY = itemConfig.scale?.y ?? 1
+                    const scaleZ = itemConfig.scale?.z ?? 1
+                    loadedObject.scale.set(scaleX, scaleY, scaleZ)
+                    
+                    // --- WICHTIG: Füge zur Instanz-Szene und Instanz-Clickables hinzu ---
+                    this.#scene.add(loadedObject)
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt.`)
 
-                default:
-                    console.warn(`[World${instanceIdLog}] Unbekannter Objekttyp in Konfiguration: ${itemConfig.type}`)
-                    throw new Error(`Unbekannter Objekttyp: ${itemConfig.type}`)
-            }
-
-            // Wenn ein Objekt erfolgreich geladen/erstellt wurde
-            if (loadedObject) {
-                // Konfiguration anwenden
-                if (itemConfig.name) loadedObject.name = itemConfig.name
-
-                // Setze Position (falls in Config definiert)
-                if (itemConfig.position) {
-                    loadedObject.position.set(
-                        itemConfig.position.x || 0, 
-                        itemConfig.position.y || 0, 
-                        itemConfig.position.z || 0
-                    )
-                }
-
-                // Rotation nur setzen, wenn nicht in der Komponente selbst gesetzt (wie bei Plane)
-                if (itemConfig.rotation && itemConfig.type !== 'plane') {
-                    loadedObject.rotation.set(
-                        itemConfig.rotation.x || 0, 
-                        itemConfig.rotation.y || 0, 
-                        itemConfig.rotation.z || 0
-                    )
-                }
-
-                // Setze Skalierung (falls in Config definiert
-                // Nutze standardwert 1, falls nichts angegeben
-                if (itemConfig.scale) {
-                    loadedObject.scale.set(
-                        itemConfig.scale.x || 1, 
-                        itemConfig.scale.y || 1, 
-                        itemConfig.scale.z || 1
-                    )
-                }
-
-                // --- WICHTIG: Füge zur Instanz-Szene und Instanz-Clickables hinzu ---
-                this.#scene.add(loadedObject)
-                console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt.`)
-
-                // Optional: Füge nur das konfigurierte Hauptobjekt zur Liste der klickbaren Objekte hinzu
-                // (Vorbereitung für spätere Interaktion)
-                if (this.#clickableObjects) { // Sicherstellen, dass das Array existiert
+                    // Optional: Füge nur das konfigurierte Hauptobjekt zur Liste der klickbaren Objekte hinzu
+                    // (Vorbereitung für spätere Interaktion)
+                    loadedSceneObjects.push(loadedObject)
                     this.#clickableObjects.push(loadedObject)
-                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur clickableObjects hinzugefügt.`)
-                } else {
-                    console.warn(`[World${instanceIdLog}] #clickableObjects existiert nicht beim Hunzufügen von: `, loadedObject.name)
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zu loadedSceneObjects/clickableObjects hinzugefügt.`)
                 }
-
-                console.log(`Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt und konfiguriert.`)
-                // --- HINWEIS: Rückgabe des loadedObject ist hier nicht mehr nötig, da wir Promise.allSettled nutzen ---
-                // return loadedObject // Diese Zeile von früher ist nicht mehr nötig
-            } else {
-                // Falls der Switch keinen LoadObject erzeugt hat
-                throw new Error(`Objekt konnte nicht geladen/erstellt werden für Typ: ${itemConfig.type}`)
+            } catch (error) {
+                console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
+                // Optional: Zeige Fehler im UI an (wird bereits teilweise durch onError des LoadingManagers behandelt)
+                if (this.#loadingIndicatorElement) {
+                    this.#loadingPercentageElement.textContent = `Initialization Error! Check Console.`
+                    this.#loadingProgressBarElement.style.width = '100%'
+                    this.#loadingProgressBarElement.style.backgroundColor = 'red'
+                    this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
+                }
+                throw error // Fehler weiterwerfen, wird in main.js gefangen
             }
-        } catch (error) {
-            console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
-            // Optional: Zeige Fehler im UI an (wird bereits teilweise durch onError des LoadingManagers behandelt)
-            if (this.#loadingIndicatorElement) {
-                this.#loadingPercentageElement.textContet = `Initialization Error! Check Console.`
-                this.#loadingProgressBarElement.style.width = '100%'
-                this.#loadingProgressBarElement.style.backgroundColor = 'red'
-                this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
-            }
-            throw error // Fehler weiterwerfen, wird in main.js gefangen
+            console.log(`[World${instanceIdLog}] init abgeschlossen für: ${itemConfig.name || itemConfig.type}`)
         }
-        
-        console.log(`[World${instanceIdLog}] init abgeschlossen für: ${itemConfig.name || itemConfig.type}`)
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
 
         // Event Listener hier erst registrieren, wenn Objekt sicher hinzugefügt wurde
         this.#setupEventListeners(instanceIdLog) // Rufe die Methode auf, die die Listener anmeldet
+
+        // HIER WEITER mit: 
+        // --- Kamera-Ziel NACH dem Laden ALLER Objekte anpassen ---
+        // ---------------------------------------------------------
     }
 
     // --- Methode zum Registrieren der Listener
@@ -650,12 +650,12 @@ class World {
      * 
      */
     dispose() {
-        const instanceIdLog = ` Instance ${this.#instanceId} (${this.container?.id})`
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container?.id})`
         console.log(`[World${instanceIdLog}] Dispose wird aufgerufen...`)
 
         // Sicherstellen, dass die Klasse entfernt wird, falls dispose während des Fade-Outs aufgerufen wird
         if (this.#loadingIndicatorElement) {
-            this.#loadingIndicatorElement.classList.remove('hidden', 'hidden'); // Zustand zurücksetzen
+            this.#loadingIndicatorElement.classList.remove('visible', 'hidden'); // Zustand zurücksetzen
         }
 
         // 1. Event Listener entfernen ---
@@ -703,7 +703,7 @@ class World {
                 const folderName = `Viewer ${this.#instanceId} (${this.#container?.id})`
                 try {
                     // Finde den Ordner dieser Instanz und zerstöre ihn
-                    const folder = this.#gui.folders.find(f => f._title === instanceName)
+                    const folder = this.#gui.folders.find(f => f._title === folderName)
                     if (folder) {
                         folder.destroy()
                         console.log(`[World${instanceIdLog}] GUI Ordner '${folderName}' entfernt.`)
@@ -752,7 +752,7 @@ class World {
                                     material.dispose()
                                 })
                             } else {
-                                if (child.material.map) obj.material.map.dispose()
+                                if (child.material.map) child.material.map.dispose()
                                 // Weitere Texturtypen prüfen
                                 child.material.dispose()
                             }
