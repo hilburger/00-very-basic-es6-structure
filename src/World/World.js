@@ -1,7 +1,7 @@
 // src/World/World.js
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
-import { LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer, Box3, Vector3 } from 'three' // AxesHelper und Color sind nur für Debugging
+import { LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer, Box3, Sphere,Vector3 } from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
 import eventBus from './systems/EventBus.js'
@@ -551,7 +551,84 @@ class World {
                 // throw error // Fehler weiterwerfen, wird in main.js gefangen
             }
         }
-        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen`)
+        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen.`)
+
+        // --- Kamera-Framing ---
+        if (loadedSceneObjects.length > 0) {
+            const overallBoundingBox = new Box3()
+
+            loadedSceneObjects.forEach(object => {
+                // Stelle sicher, dass die Matrix des Objekts aktuell ist
+                object.updateMatrixWorld(true)
+                // Erzeuge eine Box3 für das aktuelle Objekt und erweitere die Gesamtbox
+                const objectBox = new Box3().setFromObject(object)
+                overallBoundingBox.union(objectBox)
+            })
+
+            if (!overallBoundingBox.isEmpty()) {
+                // 1. Mittelpunkt der BoundingBox als neues OrbitControls-Ziel
+                const center = new Vector3()
+                overallBoundingBox.getCenter(center)
+                this.#controls.target.copy(center)
+                console.log(`[World${instanceIdLog}] Kamera-Ziel auf Mittelpunkt der Szene gesetzt:`, center)
+
+                // 2. Kamera-Distanz anpassen
+                const size = new Vector3()
+                overallBoundingBox.getSize(size)
+                const maxDim = Math.max(size.x, size.y, size.z) // Größte Ausdehnung der Box
+
+                // Abstandsberechnung (vereinfacht, kann verfeinert werden)
+                // Nimmt den größten Wert von FOV (vertikal) und FOV basierend auf Aspect Ration (ergibt horizontal)
+                const fov = this.#camera.fov * (Math.PI / 180) // FOV in Radiant
+                let cameraZ = Math.abs(maxDim * 0.5 / Math.tan(fov * 0.5))
+
+                // Zusätzlicher Abstandsfaktor, damit die Objekte nicht direkt am Rand kleben
+                cameraZ *= 1.5
+
+                // Neue Kameraposition: Ziel + Abstand entlang der Blickrichtung (inital von oben/hinten)
+                // Wir behalten die aktuelle Kamerarichtung bei und bewegen sie nur entlang ihrer Z-Achse relativ zum neuen Ziel
+                // oder setzen eine Standardausrichtung. 
+                // Für einen ersten einfachen Ansatz positionieren wir die Kamera einfach entlang entlang der Z-Achse vom Zentrum weg
+                // und schauen auf das Zentrum.
+
+                // Altenative 1: Einfach Positionierung entlang der Welt-Z-Achse (oder einer anderen Achse)
+                // this.#camera.position.set(center.x, center.y + size.y * 0.5, center.z + cameraZ)
+
+                // Alternative 2: Kameraposition basierend auf der aktuellen Blickrichtung der Controls anpassen
+                // oder eine definierte Richtung zum Zentrum einnehmen.
+                // Wir nutzen hier einen einfachen Ansatz, die Kamera etwas erhöht und nach hinten zu setzen
+                this.#camera.position.set(
+                    center.x,
+                    center.y + maxDim * 0.25, // etwas erhöht
+                    center.z + cameraZ // Abstand
+                )
+
+                // Sicherstellen, dass die Kamera auf das neue Ziel blickt
+                this.#camera.lookAt(center)
+
+                // OrbitControls nach Positions- und Zieländerung aktualisieren
+                this.#controls.update()
+                console.log(`[World${instanceIdLog}] Kamera-Position angepasst auf:`, this.#camera.position)
+
+                // Optional: Near und Far Plane anpassen
+                // Dies ist eine sehr grobe Anpassung und müsste ggf. feiner justiert werden.
+                const sceneRadius = overallBoundingBox.getBoundingSphere(new Sphere()).radius
+                if (sceneRadius > 0) {
+                    this.#camera.near = Math.max(0.1, sceneRadius / 100)
+                    this.#camera.far = sceneRadius *5 // Faktor 5 ist momentan willkürlich
+                    this.#camera.updateProjectionMatrix()
+                    console.log(`[World${instanceIdLog}] Kamera Near/Far angepasst. Near: ${this.#camera.near.toFixed(2)}, Far: ${this.#camera.far.toFixed(2)}`)
+                }
+
+            } else {
+                console.warn(`[World${instanceIdLog}] Bounding Box für Kamera-Framing ist leer. Überspringe Anpassung`)
+                // Standard-Kameraposition und -ziel, falls keine Objekte geladen wurden
+                this.#controls.target.set(0, 0, 0)
+                this.#camera.position.set(0, 1, 5)
+                this.#camera.lookAt(0, 0, 0)
+                this.#controls.update()
+            }
+        }
 
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
 
