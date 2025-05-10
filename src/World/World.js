@@ -543,15 +543,16 @@ class World {
                 console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
                 // Optional: Zeige Fehler im UI an (wird bereits teilweise durch onError des LoadingManagers behandelt)
                 if (this.#loadingIndicatorElement) {
-                    this.#loadingPercentageElement.textContent = `Initialization Error! Check Console.`
+                    this.#loadingPercentageElement.textContent = `Error initializing item: ${itemConfig.name || itemConfig.type}. Check Console.`
                     this.#loadingProgressBarElement.style.width = '100%'
                     this.#loadingProgressBarElement.style.backgroundColor = 'red'
                     this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
                 }
-                throw error // Fehler weiterwerfen, wird in main.js gefangen
+                // throw error // Fehler weiterwerfen, wird in main.js gefangen
             }
-            console.log(`[World${instanceIdLog}] init abgeschlossen für: ${itemConfig.name || itemConfig.type}`)
         }
+        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen`)
+
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
 
         // Event Listener hier erst registrieren, wenn Objekt sicher hinzugefügt wurde
@@ -560,6 +561,8 @@ class World {
         // HIER WEITER mit: 
         // --- Kamera-Ziel NACH dem Laden ALLER Objekte anpassen ---
         // ---------------------------------------------------------
+
+        // console.log(`[World${instanceIdLog}] init abgeschlossen für: ${itemConfig.name || itemConfig.type}`)
     }
 
     // --- Methode zum Registrieren der Listener
