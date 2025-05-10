@@ -61,11 +61,22 @@ class World {
     #loadingCountsElement
     #loadingProgressBarElement
 
+    #cameraSettings = {}
+
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
-    constructor(container, isDebugMode = false, instanceId) {
+    constructor(container, mainConfig, isDebugMode = false, instanceId) {
         this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
+
+        // Mamera-spezifische Einstellungen aus mainConfig extrahieren (oder Defaults verwenden)
+        this.#cameraSettings = {
+            fov: mainConfig?.cameraConfig?.fov || 58, // STandard FOV, falls nicht in Config
+            near: mainConfig?.cameraConfig?.near || 0.1, 
+            far: mainConfig?.cameraCOnfig?.far || 100, 
+            framingPadding: mainConfig?.cameraConfig?.framingPadding || 1.5
+        }
+
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
 
@@ -168,10 +179,10 @@ class World {
         // Nutzt die Breite/Höhe des spezifischen Containers dieser Instanz
         const aspectRatio = this.#container.clientWidth / this.#container.clientHeight
         const camera = new PerspectiveCamera(
-            58,     // FOV
+            this.#cameraSettings.fov,     // FOV
             aspectRatio, 
-            0.1,    // near
-            100     // far
+            this.#cameraSettings.near,    // near
+            this.#cameraSettings.far    // far
         )
         // Setze Standard-Kameraposition für jede Instanz
         camera.position.set(0, 1, 2)
@@ -575,31 +586,22 @@ class World {
                 // 2. Kamera-Distanz anpassen
                 const size = new Vector3()
                 overallBoundingBox.getSize(size)
-                const maxDim = Math.max(size.x, size.y, size.z) // Größte Ausdehnung der Box
 
-                // Abstandsberechnung (vereinfacht, kann verfeinert werden)
-                // Nimmt den größten Wert von FOV (vertikal) und FOV basierend auf Aspect Ration (ergibt horizontal)
-                const fov = this.#camera.fov * (Math.PI / 180) // FOV in Radiant
-                let cameraZ = Math.abs(maxDim * 0.5 / Math.tan(fov * 0.5))
+                // Verbesserte Distanzberechnung
+                const fovYRadians = this.#camera.fov * (Math.PI / 180)
+                const distanceForHeight = Math.abs((size.y * 0.5) / Math.tan(fovYRadians * 0.5))
+                const fovXRadians = 2 * Math.atan(Math.tan(fovYRadians * 0.5) * this.#camera.aspect)
+                const distanceForWidth = Math.abs((size.x * 0.5) / Math.tan(fovXRadians * 0.5))
 
-                // Zusätzlicher Abstandsfaktor, damit die Objekte nicht direkt am Rand kleben
-                cameraZ *= 1.5
+                let cameraZ = Math.max(distanceForHeight, distanceForWidth)
 
-                // Neue Kameraposition: Ziel + Abstand entlang der Blickrichtung (inital von oben/hinten)
-                // Wir behalten die aktuelle Kamerarichtung bei und bewegen sie nur entlang ihrer Z-Achse relativ zum neuen Ziel
-                // oder setzen eine Standardausrichtung. 
-                // Für einen ersten einfachen Ansatz positionieren wir die Kamera einfach entlang entlang der Z-Achse vom Zentrum weg
-                // und schauen auf das Zentrum.
-
-                // Altenative 1: Einfach Positionierung entlang der Welt-Z-Achse (oder einer anderen Achse)
-                // this.#camera.position.set(center.x, center.y + size.y * 0.5, center.z + cameraZ)
-
-                // Alternative 2: Kameraposition basierend auf der aktuellen Blickrichtung der Controls anpassen
-                // oder eine definierte Richtung zum Zentrum einnehmen.
-                // Wir nutzen hier einen einfachen Ansatz, die Kamera etwas erhöht und nach hinten zu setzen
+                // Verwende den konfigurierbaren Padding-Faktor
+                cameraZ *= this.#cameraSettings.framingPadding
+                
                 this.#camera.position.set(
                     center.x,
-                    center.y + maxDim * 0.25, // etwas erhöht
+                    center.y + size.y * 0.25,   // etwas erhöht
+                                                // Alternativ: center.y + Math.max(size.x, size.y size.z) * 0.25 für konsistentere Erhöhung
                     center.z + cameraZ // Abstand
                 )
 
@@ -610,12 +612,12 @@ class World {
                 this.#controls.update()
                 console.log(`[World${instanceIdLog}] Kamera-Position angepasst auf:`, this.#camera.position)
 
-                // Optional: Near und Far Plane anpassen
-                // Dies ist eine sehr grobe Anpassung und müsste ggf. feiner justiert werden.
                 const sceneRadius = overallBoundingBox.getBoundingSphere(new Sphere()).radius
                 if (sceneRadius > 0) {
-                    this.#camera.near = Math.max(0.1, sceneRadius / 100)
-                    this.#camera.far = sceneRadius *5 // Faktor 5 ist momentan willkürlich
+                    // Near/Far-Anpassung dynamischer gestalten basierend auf Padding und Distnz
+                    // oder festen Faktoren, wenn Kamera-Settings (near/far) nicht perConfig kommen
+                    this.#camera.near = Math.max(this.#cameraSettings.near, cameraZ * 0.01, sceneRadius * 0.01)
+                    this.#camera.far = Math.max(this.#cameraSettings.far, cameraZ * 2, sceneRadius * 5)
                     this.#camera.updateProjectionMatrix()
                     console.log(`[World${instanceIdLog}] Kamera Near/Far angepasst. Near: ${this.#camera.near.toFixed(2)}, Far: ${this.#camera.far.toFixed(2)}`)
                 }
@@ -628,6 +630,12 @@ class World {
                 this.#camera.lookAt(0, 0, 0)
                 this.#controls.update()
             }
+        } else {
+            console.log(`[World${instanceIdLog}] Keine Objekte fpr Kamera-Framing geladen. Standard-Kameraeinstellungen werden verwendet.`)
+            this.#controls.target.set(0, 0, 0)
+            this.#camera.position.set(0, 1, 5 * this.#cameraSettings.framingPadding / 1.5) // Fallback-Distanz
+            this.#camera.lookAt(0, 0, 0)
+            this.#controls.update()
         }
 
         // Hier könnte man z.B. einen Ladebildschirm ausblenden

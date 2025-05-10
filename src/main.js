@@ -54,16 +54,20 @@ async function main() {
             }
 
             // Validierung: Prüfen, ob die erwartete Struktur vorhanden ist
-            if (!mainConfig || !Array.isArray(mainConfig.sceneItems)) {
-                console.error(`Ungültige Struktur in data-config für Container ${instanceId} (${containerElement.id}): "sceneItems"-Array fehlt oder ist kein Array.`, mainConfig)
+            if (!mainConfig || typeof mainConfig !== 'object') { // Überprüfe ob mainConfig ein Onjekt ist
+                console.error(`Ungültige Struktur in data-config für Container ${instanceId} (${containerElement.id}): Muss ein JSON-Objekt sein.`, mainConfig)
                 instanceCounter++
                 continue
+            }
+            if (!Array.isArray(mainConfig.sceneItems)) { // SPezifische Prüfung für sceneItems bleibt
+                console.warn(`Warnung in data-config für Container ${instanceId} (${containerElement.id}): sceneItems fehlt oder ist kein Array. Viewer wird initial leer sein oder nur Standardobjekte anzeigen.`, mainConfig)
+                mainConfig.sceneItems = [] // Fallback auf leeres Array, damit init nicht fehlschlägt
             }
 
             // World-Instanz für DIESEN Container erstellen
             // WICHTIG: Wir übergeben die Instanz-spezifische Konfiguration (mainConfig)
             // und das Debug-FLag
-            const world = new World(containerElement, isDebugMode, instanceId)
+            const world = new World(containerElement, mainConfig, isDebugMode, instanceId)
 
             // Asynchrone Initialisierung für DIESE Instanz aufrufen
             // Die init-Methode muss angepasst werden, um nur EIN mainConfig zu erwarten!
