@@ -1,13 +1,18 @@
 // src/World/World.js
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
-import { LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer, Box3, Sphere,Vector3 } from 'three' // AxesHelper und Color sind nur für Debugging
+import { 
+    LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer, 
+    Box3, Sphere, Vector3, 
+    AmbientLight, DirectionalLight, PointLight, 
+    Object3D, // Für das Target von DirectionalLight
+} from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
 import eventBus from './systems/EventBus.js'
 
 // Factory für Lichter (bleibt extern)
-import { createLights } from './components/lights.js'
+import { createLights as createDefaultLights} from './components/lights.js' // Alias, um Verwechslungen zu vermeiden
 
 // System-Klassen
 import { Resizer } from './systems/Resizer.js'
@@ -62,6 +67,7 @@ class World {
     #loadingProgressBarElement
 
     #cameraSettings = {}
+    #lightSettingsFromConfig = [] // SPeichert Lichter aus der Config
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
     constructor(container, mainConfig, isDebugMode = false, instanceId) {
@@ -77,8 +83,19 @@ class World {
             framingPadding: mainConfig?.cameraConfig?.framingPadding || 1.5
         }
 
+        // Lichtkonfiguration aus mainConfig extrahieren
+        this.#lightSettingsFromConfig = (mainConfig?.lightSettings && Array.isArray(mainConfig.lightSettings))
+            ? mainConfig.lightSettings
+            : []
+
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
+        
+        if (this.#lightSettingsFromConfig.length > 0) {
+            console.log(`[World${instanceIdLog}] ${this.#lightSettingsFromConfig.length} benutzerdefinierte Lichtkonfigurationen gefunden. `)
+        } else {
+            console.log(`[World${instanceIdLog}] Keine benutzerdefinierten Lichtkonfigurationen gefunden. Standards aus lights.js werden verwendet.`)
+        }
 
         // --- Instanzfelder initialisieren ---
         this.#clickableObjects = []
@@ -139,9 +156,7 @@ class World {
         this.#resizer = new Resizer(this.#container, this.#camera, this.#renderer)
 
         // 9. Lichter für DIESE Instanz erstellen und hinzufügen
-        this.#lights = createLights() // createLights bleibt externe Funktion
-        // Der Spread-Operator '(...)' fügt alle Elemente des lights-Arrays einzeln hinzu
-        this.#scene.add(...this.#lights) // Füge zur Instanz-Szene hinzu
+        this.#setupLights(instanceIdLog)
 
         // 10. Erstelle die 3D-Objekte und füge sie der DIESER Instanz hinzu ---
         
@@ -175,6 +190,86 @@ class World {
     }
 
     // --- Private Helper-Methoden zum Erstellen von Kern-Komponenten ---
+    #setupLights(instanceIdLog) {
+        this.#lights.forEach(light => { // Zuerst eventuell vorhandene Lichter entfernen
+            this.#scene.remove(light)
+            if (light.target) this.#scene.remove(light.target) // Auch Targets entfernen
+        })
+        this.#lights = []
+
+        if (this.#lightSettingsFromConfig.length > 0) {
+            console.log(`World${instanceIdLog} Erstelle Lichter basierend auf data-config.`)
+            for (const lightConfig of this.#lightSettingsFromConfig) {
+                let light = null
+                const color = new Color(lightConfig.color !== undefined ? lightConfig.color : "#ffffff")
+                const intensity = lightConfig.intensity !== undefined ? lightConfig.intensity : 1
+
+                switch (lightConfig.type) {
+                    case 'AmbientLight':
+                        light = new AmbientLight(color, intensity)
+                        light.name = lightConfig.name || `ConfigAmbientLight_${this.#lights.length}`
+                        break
+                    case 'DirectionalLight':
+                        light = new DirectionalLight(color, intensity)
+                        light.name = lightConfig.name || `ConfigDirectionalLight_${this.#lights.length}`
+                        if (lightConfig.position) {
+                            light.position.set(
+                                lightConfig.position.x || 0, 
+                                lightConfig.position.y || 0, 
+                                lightConfig.position.z || 0
+                            )
+                        } else {
+                            light.position.set(1, 1, 1)
+                        }
+                        if (lightConfig.targetPosition) {
+                            const targetObject = new Object3D()
+                            targetObject.position.set(
+                                lightConfig.targetPosition.x || 0, 
+                                lightConfig.targetPosition.y || 0, 
+                                lightConfig.targetPosition.z || 0
+                            )
+                        }
+                        break
+                    case 'PointLight':
+                        light = new PointLight(
+                            color, 
+                            intensity, 
+                            lightConfig.distance || 0, 
+                            lightConfig.decay !== undefined ? lightConfig.decay : 2
+                        )
+                        light.name = lightConfig.name || `ConfigPointLight_${this.#lights.length}`
+                        if (lightConfig.position) {
+                            light.position.set(
+                                lightConfig.position.x || 0,
+                                lightConfig.position.y || 0, 
+                                lightConfig.position.z || 0
+                            )
+                        }
+                        break
+                    default:
+                        console.warn(`[World${instanceIdLog}] Unbekannter Licht-Typ in Konfiguration: ${lightConfig.type}`)
+                        continue
+                }
+
+                if (light) {
+                    this.#lights.push(light)
+                    this.#scene.add(light)
+                    console.log(`[World${instanceIdLog}] Licht '${light.name}' (${lightConfig.type}) zur Szene hinzugefügt.`)
+                }
+            }
+        } else {
+            // Fallback: Keine lightSettings in der COnfig -> Standardlichter aus lights.js verwenden
+            console.log(`[World${instanceIdLog}] Erstelle Standardlichter aus ./components/lights.js`)
+            const defaultLightsArray = createDefaultLights()
+            this.#lights.push(...defaultLightsArray)
+            this.#scene.add(...defaultLightsArray)
+            defaultLightsArray.forEach(l => {
+                const lightName = l.name || l.constructor.name || 'UnknownLightType' // Sicherer Name
+                console.log(`[World${instanceIdLog}] Standardlicht '${lightName}' hinzugefügt.`)
+            })
+        }
+    }
+
     #createCamera() {
         // Nutzt die Breite/Höhe des spezifischen Containers dieser Instanz
         const aspectRatio = this.#container.clientWidth / this.#container.clientHeight
