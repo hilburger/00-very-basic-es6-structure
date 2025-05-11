@@ -75,12 +75,19 @@ class World {
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
 
-        // Mamera-spezifische Einstellungen aus mainConfig extrahieren (oder Defaults verwenden)
+        const cameraConf = mainConfig?.cameraConfig || {}
+        // Camera-spezifische Einstellungen aus mainConfig extrahieren (oder Defaults verwenden)
         this.#cameraSettings = {
-            fov: mainConfig?.cameraConfig?.fov || 58, // STandard FOV, falls nicht in Config
-            near: mainConfig?.cameraConfig?.near || 0.1, 
-            far: mainConfig?.cameraConfig?.far || 100, 
-            framingPadding: mainConfig?.cameraConfig?.framingPadding || 1.5
+            fov: cameraConf.fov || 58, // STandard FOV, falls nicht in Config
+            near: cameraConf.near || 0.1, 
+            far: cameraConf.far || 100, 
+            framingPadding: cameraConf.framingPadding || 1.5, 
+            initialPosition: cameraConf.initialPosition, // {x,y,z} oder undefined
+            initialLookAt: cameraConf.initialLookAt, // {x,y,z} oder undefined
+            // disableFramingIfInitialSet: true, wenn beide Initialwerte da sind, sonst false ODER den Wert aus der Config nehmen
+            disableFramingIfInitialSet: cameraConf.initialPosition && cameraConf.initialLookAt
+                ? (cameraConf.disableFramingIfInitialSet !== undefined ? cameraConf.disableFramingIfInitialSet : true)
+                : false
         }
 
         // Lichtkonfiguration aus mainConfig extrahieren
@@ -144,6 +151,20 @@ class World {
             // this.#controls.minDistance = 2 // Minimaler Zoom-Abstand
             // this.#controls.maxDistance = 15 // Maximaler Zoom-Abstand
             // this.#controls.maxPolarAngle = Math.PI * 0.5 // Verhindert, dass man untzer die Bodenplatte/-ebene schaut
+
+        // Initiales Target für OrbitControls setzen, falls in COnfig definiert
+        if (this.#cameraSettings.initialLookAt) {
+            this.#controls.target.set(
+                this.#cameraSettings.initialLookAt.x, 
+                this.#cameraSettings.initialLookAt.y, 
+                this.#cameraSettings.initialLookAt.z, 
+            )
+            this.#controls.update() // Wichtig nach Targetänderung
+            console.log(`[World${instanceIdLog}] OrbitControls auf InitialLookAt gesetzt:`, this.#controls.target)
+        } else {
+            // Fallback, falls kein initialLookAt, aber trotzdem Damping aktiv ist
+            // this.#controls.target.set(0, 0.75, 0); // Besser im Framing-Block oder gar nicht, wenn Framing aktiv wird
+        }
 
         // 7. Animations-Loop für DIESE Instanz erstellen
         this.#loop = new Loop(this.#camera, this.#scene, this.#renderer)
@@ -256,6 +277,9 @@ class World {
                 if (light) {
                     this.#lights.push(light)
                     this.#scene.add(light)
+                    if (light.target && light.target.parent !== this.#scene) { // Sicehrstellen, dass Target hinzugefügt wird, falls es noch nicht in der Szene ist
+                        this.#scene.add(light.target)
+                    }
                     console.log(`[World${instanceIdLog}] Licht '${light.name}' (${lightConfig.type}) zur Szene hinzugefügt.`)
                 }
             }
@@ -264,8 +288,11 @@ class World {
             console.log(`[World${instanceIdLog}] Erstelle Standardlichter aus ./components/lights.js`)
             const defaultLightsArray = createDefaultLights()
             this.#lights.push(...defaultLightsArray)
-            this.#scene.add(...defaultLightsArray)
             defaultLightsArray.forEach(l => {
+                this.#scene.add(l)
+                if (l.target && l.target.parent !== this.#scene) { // Überprüfe, ob l.target ein gültiges Objekt ist und ob das Terget des Lichts nicht bereits ein Kind der Szene ist
+                    this.#scene.add(l.target)
+                }
                 const lightName = l.name || l.constructor.name || 'UnknownLightType' // Sicherer Name
                 console.log(`[World${instanceIdLog}] Standardlicht '${lightName}' hinzugefügt.`)
             })
@@ -273,6 +300,7 @@ class World {
     }
 
     #createCamera() {
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Fürs Logging
         // Nutzt die Breite/Höhe des spezifischen Containers dieser Instanz
         const aspectRatio = this.#container.clientWidth / this.#container.clientHeight
         const camera = new PerspectiveCamera(
@@ -281,8 +309,20 @@ class World {
             this.#cameraSettings.near,    // near
             this.#cameraSettings.far    // far
         )
-        // Setze Standard-Kameraposition für jede Instanz
-        camera.position.set(0, 1, 2)
+
+        // Berücksichtige initialPosition aus der Config
+        if (this.#cameraSettings.initialPosition) {
+            camera.position.set(
+                this.#cameraSettings.initialPosition.x, 
+                this.#cameraSettings.initialPosition.y, 
+                this.#cameraSettings.initialPosition.z 
+            )
+            console.log(`[World${instanceIdLog}] Kamera-Position auf initialPosition gesetzt: `, camera.position)
+        } else {
+            // Fallback-Position, falls keine initialPosition definiert ist
+            camera.position.set(0, 1, 5)
+            console.log(`[World${instanceIdLog}] Kamera-Position auf Fallback gesetzt: `, camera.position)
+        }        
         return camera
     }
 
@@ -662,7 +702,18 @@ class World {
         console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen.`)
 
         // --- Kamera-Framing ---
-        if (loadedSceneObjects.length > 0) {
+        // Bedingungen für automatisches Framing: 
+        // - Es müssen Objekte geladen sein UND
+        // - Entweder disableFramingIfInitialSet ist false ODER
+        // - initialPosition oder initialLookAt sind nicht beide gesetzt 
+        //   (d.h. #cameraSettings.disableFramingIfInitialSet wurde im Config nstructor false)
+        const performFraming = loadedSceneObjects.length > 0 &&
+                                (!this.#cameraSettings.disableFramingIfInitialSet || 
+                                 !this.#cameraSettings.initialPosition || 
+                                 !this.#cameraSettings.initialLookAt)
+
+        if (performFraming) {
+            console.log(`[World${instanceIdLog}] Automatische Kamera-Framing wird durchgeführt.`)
             const overallBoundingBox = new Box3()
 
             loadedSceneObjects.forEach(object => {
@@ -695,12 +746,12 @@ class World {
                 // Verwende den konfigurierbaren Padding-Faktor
                 cameraZ *= this.#cameraSettings.framingPadding
                 
+                // Position der Kamera setzen (wird IMMER durch Framing bestimmt, performFraming true ist)
                 this.#camera.position.set(
-                    center.x,
-                    center.y + size.y * 0.25,   // etwas erhöht
-                                                // Alternativ: center.y + Math.max(size.x, size.y size.z) * 0.25 für konsistentere Erhöhung
-                    center.z + cameraZ // Abstand
-                )
+                    center.x, 
+                    center.y + size.y * 0.15,
+                    center.z + cameraZ
+                )                
 
                 // Sicherstellen, dass die Kamera auf das neue Ziel blickt
                 this.#camera.lookAt(center)
@@ -722,17 +773,29 @@ class World {
             } else {
                 console.warn(`[World${instanceIdLog}] Bounding Box für Kamera-Framing ist leer. Überspringe Anpassung`)
                 // Standard-Kameraposition und -ziel, falls keine Objekte geladen wurden
+                if (!this.#cameraSettings.initialPosition && !this.#cameraSettings.initialLookAt) {
+                    this.#controls.target.set(0, 0, 0)
+                    this.#camera.position.set(0, 1, 5)
+                    this.#camera.lookAt(0, 0, 0)
+                    this.#controls.update()
+                }
+                
+            }
+        } else if (loadedSceneObjects.length > 0 && this.#cameraSettings.disableFramingIfInitialSet){
+            console.log(`[World${instanceIdLog}] Automatisches Kamera-Framing übersprungen aufgrund von initialPosition/initialLookAt und disableFramingIfInitialSet=true.`)
+            // Sicherstellen, dass die Kamera auf initialLookAt blickt, falls es gesetzt wurde.
+            // Die Position wurde bereits in #createCamera gesetzt.
+            // Das Target wurde bereits im Construczot f+r #controls gesetzt.
+            // Ein #controls.update() ist hier ggf. nicvht nötig, schadet aber auch nicht.
+            this.#controls.update()
+        } else {
+            console.log(`[World${instanceIdLog}] Keine Objekte für Kamera-Framing geladen oder initialPosition/LookAt nicht gesetzt.`)
+            if (!this.#cameraSettings.initialPosition && !this.#cameraSettings.initialLookAt) {
                 this.#controls.target.set(0, 0, 0)
-                this.#camera.position.set(0, 1, 5)
+                // Die Kameraposition wurde in #createCamera() bereits auf einen Default gesetzt
                 this.#camera.lookAt(0, 0, 0)
                 this.#controls.update()
             }
-        } else {
-            console.log(`[World${instanceIdLog}] Keine Objekte fpr Kamera-Framing geladen. Standard-Kameraeinstellungen werden verwendet.`)
-            this.#controls.target.set(0, 0, 0)
-            this.#camera.position.set(0, 1, 5 * this.#cameraSettings.framingPadding / 1.5) // Fallback-Distanz
-            this.#camera.lookAt(0, 0, 0)
-            this.#controls.update()
         }
 
         // Hier könnte man z.B. einen Ladebildschirm ausblenden
