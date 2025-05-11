@@ -79,7 +79,7 @@ class World {
         this.#cameraSettings = {
             fov: mainConfig?.cameraConfig?.fov || 58, // STandard FOV, falls nicht in Config
             near: mainConfig?.cameraConfig?.near || 0.1, 
-            far: mainConfig?.cameraCOnfig?.far || 100, 
+            far: mainConfig?.cameraConfig?.far || 100, 
             framingPadding: mainConfig?.cameraConfig?.framingPadding || 1.5
         }
 
@@ -228,6 +228,8 @@ class World {
                                 lightConfig.targetPosition.y || 0, 
                                 lightConfig.targetPosition.z || 0
                             )
+                            this.#scene.add(targetObject)
+                            light.target = targetObject
                         }
                         break
                     case 'PointLight':
