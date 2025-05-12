@@ -6,6 +6,7 @@ import {
     Box3, Sphere, Vector3, 
     AmbientLight, DirectionalLight, PointLight, 
     Object3D, // Für das Target von DirectionalLight
+    DirectionalLightHelper, PointLightHelper
 } from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
@@ -216,9 +217,16 @@ class World {
 
     // --- Private Helper-Methoden zum Erstellen von Kern-Komponenten ---
     #setupLights(instanceIdLog) {
-        this.#lights.forEach(light => { // Zuerst eventuell vorhandene Lichter entfernen
+        this.#lights.forEach(light => { // Zuerst eventuell vorhandene Lichter und Helper entfernen
+            if (light.userData.helper) {
+                this.#scene.remove(light.userData.helper)
+                light.userData.helper.dispose?.() // ?. für den Fall, dass dispose nicht existiert
+                delete light.userData.helper // Entferne die Referenz
+            }
             this.#scene.remove(light)
-            if (light.target) this.#scene.remove(light.target) // Auch Targets entfernen
+            if (light.target) { // Für DirectLight
+                this.#scene.remove(light.target) 
+            }
         })
         this.#lights = []
 
@@ -226,6 +234,7 @@ class World {
             console.log(`World${instanceIdLog} Erstelle Lichter basierend auf data-config.`)
             for (const lightConfig of this.#lightSettingsFromConfig) {
                 let light = null
+                let helper = null
                 const color = new Color(lightConfig.color !== undefined ? lightConfig.color : "#ffffff")
                 const intensity = lightConfig.intensity !== undefined ? lightConfig.intensity : 1
 
@@ -233,6 +242,7 @@ class World {
                     case 'AmbientLight':
                         light = new AmbientLight(color, intensity)
                         light.name = lightConfig.name || `ConfigAmbientLight_${this.#lights.length}`
+                        // AmbientLight hat keinen Standard-Helper
                         break
                     case 'DirectionalLight':
                         light = new DirectionalLight(color, intensity)
@@ -256,6 +266,10 @@ class World {
                             this.#scene.add(targetObject)
                             light.target = targetObject
                         }
+                        helper = new DirectionalLightHelper(light, 1) // 1 ist die Größe des Helpers
+                        helper.name = `{$light.name}_Helper`
+                        light.userData.helper = helper // Helper am Licht speichern
+                        this.#scene.add(helper)
                         break
                     case 'PointLight':
                         light = new PointLight(
@@ -272,6 +286,10 @@ class World {
                                 lightConfig.position.z || 0
                             )
                         }
+                        helper = new PointLightHelper(light, 0.5) // 0.5 ist die Größe des Helpers
+                        helper.name = `${light.name}_Helper`
+                        light.userData.helper = helper
+                        this.#scene.add(helper)
                         break
                     default:
                         console.warn(`[World${instanceIdLog}] Unbekannter Licht-Typ in Konfiguration: ${lightConfig.type}`)
@@ -284,21 +302,43 @@ class World {
                     if (light.target && light.target.parent !== this.#scene) { // Sicehrstellen, dass Target hinzugefügt wird, falls es noch nicht in der Szene ist
                         this.#scene.add(light.target)
                     }
-                    console.log(`[World${instanceIdLog}] Licht '${light.name}' (${lightConfig.type}) zur Szene hinzugefügt.`)
+                    console.log(`[World${instanceIdLog}] Licht '${light.name}' (${lightConfig.type})` + (helper ? ' mit Helper' : '') + ` zur Szene hinzugefügt.`)
                 }
             }
         } else {
-            // Fallback: Keine lightSettings in der COnfig -> Standardlichter aus lights.js verwenden
+            // Fallback: Keine lightSettings in der Config -> Standardlichter aus lights.js verwenden
             console.log(`[World${instanceIdLog}] Erstelle Standardlichter aus ./components/lights.js`)
             const defaultLightsArray = createDefaultLights()
-            this.#lights.push(...defaultLightsArray)
-            defaultLightsArray.forEach(l => {
-                this.#scene.add(l)
-                if (l.target && l.target.parent !== this.#scene) { // Überprüfe, ob l.target ein gültiges Objekt ist und ob das Terget des Lichts nicht bereits ein Kind der Szene ist
-                    this.#scene.add(l.target)
+
+            //this.#lights.push(...defaultLightsArray)
+            defaultLightsArray.forEach((defaultLight, index) => {
+                
+                let light = defaultLight // Arbeite mit der Kope/Instanz
+                let helper = null
+                // Namen setzen, falls vorhanden
+                if (!light.name) {
+                    light.name = `${light.constructor.name}_Default_${index}`
                 }
-                const lightName = l.name || l.constructor.name || 'UnknownLightType' // Sicherer Name
-                console.log(`[World${instanceIdLog}] Standardlicht '${lightName}' hinzugefügt.`)
+
+                if (light.isDirectionalLight) {
+                    helper = new DirectionalLightHelper(light, 1)
+                } else if (light.isPointLight) {
+                    helper = new PointLightHelper(light, 0.5)
+                }
+                // Weitere Helper für andere Standardlichttypen hier hinzufügen
+
+                if (helper) {
+                    helper.name = `${light.name}_Helper`
+                    light.userData.helper = helper
+                    this.#scene.add(helper)
+                }
+
+                this.#lights.push(light) // Füge das konfigurierte Licht zum Array hinzu
+                this.#scene.add(light)
+                if (light.target && light.target.parent !== this.#scene) {
+                    this.#scene.add(light.target)
+                }
+                console.log(`[World${instanceIdLog}] Standardlicht '${light.name}' hinzugefügt.`)
             })
         }
     }
@@ -529,6 +569,83 @@ class World {
             }).listen()
             // cameraFolder.open() // Optional: Den Kamera-Hauptordner öffnen
 
+            // --- Licht-Regler ---
+            if (this.#lights.length > 0) {
+                const lightsFolder = this.#gui.addFolder('Lichter')
+                // lightsFolder.open() // Optional
+
+                this.#lights.forEach((light, index) => {
+                    // Verwende einen eindeutigen Namen für den Ordner, falls light.name nicht gesetzt ist
+                    const lightFolderName = light.name || `${light.constructor.name}_${index}`
+                    const individualLightFolder = lightsFolder.addFolder(lightFolderName)
+
+                    // --- Regler für Helper-Sichtbarkeit ---
+                    if (light.userData.helper) {
+                        individualLightFolder.add(light.userData.helper, 'visible').name('Helper sichtbar')
+                    } else if (!light.isAmbientLight) {
+                        individualLightFolder.add({note: 'Keine Helper'}, 'note').name('Helper').disable()
+                    }
+
+                    // --- Gemeinsame Eigenschaften: Farbe und Intensität ---
+                    // Um die Farbe dynamisch zu aktualisieren, müssen wir ein temporäres Objekt erstellen und verwenden
+                    const colorProxy = { color: `#${light.color.getHexString()}` }
+                    individualLightFolder.addColor(colorProxy, 'color')
+                        .name('Farbe')
+                        .onChange((value) => {
+                            light.color.set(value)
+                        })
+
+                    individualLightFolder.add(light, 'intensity', 0, 10, 0.1).name('Intensität').listen() // Range ggf. anpassen
+
+                    // --- Position (für Lichter, die eine Position haben) ---
+                    if (light.position) {
+                        const posFolder = individualLightFolder.addFolder('Position')
+                        posFolder.add(light.position, 'x', -20, 20, 0.1).name('X').listen().onChange(() => {
+                            light.userData.helper?.update() // Optional Chaining fürs update des Helpers
+                        })
+                        posFolder.add(light.position, 'y', -20, 20, 0.1).name('Y').listen().onChange(() => {
+                            light.userData.helper?.update() // Optional Chaining fürs update des Helpers
+                        })
+                        posFolder.add(light.position, 'z', -20, 20, 0.1).name('Z').listen().onChange(() => {
+                            light.userData.helper?.update() // Optional Chaining fürs update des Helpers
+                        })
+                        // posFolder.open()
+                    }
+
+                    // --- SPezifische EIgenschaften für DIrectionalLight ---
+                    if (light.isDirectionalLight) {
+                        // Das Target-Objekt eines DIrectionalLight ist standardmäßig bei (0,0,0) relativ zur Lichtquelle
+                        // Wenn wir das Target bewegen wollen, bewegen wir das light.target Objekt.
+                        if (light.target && light.target.position) {
+                            const targetPosFolder = individualLightFolder.addFolder('Ziel-Position/Target')
+                            targetPosFolder.add(light.target.position, 'x', -20, 20, 0.1).name('X').listen().onChange(() => {
+                                light.userData.helper?.update()
+                            })
+                            targetPosFolder.add(light.target.position, 'y', -20, 20, 0.1).name('Y').listen().onChange(() => {
+                                light.userData.helper?.update()
+                            })
+                            targetPosFolder.add(light.target.position, 'z', -20, 20, 0.1).name('Z').listen().onChange(() => {
+                                light.userData.helper?.update()
+                            })
+                            // targetPosFolder.open()
+                        }
+                    }
+
+                    // --- Spezifische Eigenschaften für PointLight ---
+                    if (light.isPointLight) {
+                        individualLightFolder.add(light, 'distance', 0, 100, 0.1).name('Distanz').listen().onChange(() => {
+                            light.userData.helper?.update()
+                        })
+                        individualLightFolder.add(light, 'decay', 0, 5, 0.01).name('Decay').listen().onChange(() => {
+                            light.userData.helper?.update() // Decay ändert nicht die Helpergröße, aber schadet nicht
+                        })
+                        // PointLightHelper Größe wird nicht direkt durch distance/decay beeinflusst, sondern durch den 2. Parameter im Constructur
+                        // Aber man könnte den Helper neu erstellen oder seine sphere.scale anpassen, wenn man das möchte
+                    }
+                    // individualLightFolder.open()
+                })
+            }
+
             // --- Export Button ---
             const exportSettings = {
                 exportCameraConfig: () => {
@@ -592,7 +709,7 @@ class World {
             const exportSettingsButton = this.#gui.add(exportSettings, 'exportCameraConfig').name('Export Kamera-Config')
             exportSettingsButton._label = 'Export Kamera-Config'
             console.log('-------------------------------- exportSettingsButton: ', exportSettingsButton)
-            
+
             console.log(`[World${instanceIdLog}] GUI-Ordner für Kamera- und Basis-Settings hinzugefügt.`)
         } else {
             console.log(`[World${instanceIdLog}] KEINE GUI-Instanz verfügbar.`)
