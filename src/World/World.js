@@ -98,6 +98,10 @@ class World {
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
         
+        // Für sauberes Logging ohne Proxyobjekte, falls #cameraSettings später komplexer wird
+        console.log(`[World${instanceIdLog}] Kamera-Settings initial:`, JSON.parse(JSON.stringify(this.#cameraSettings)))
+
+        
         if (this.#lightSettingsFromConfig.length > 0) {
             console.log(`[World${instanceIdLog}] ${this.#lightSettingsFromConfig.length} benutzerdefinierte Lichtkonfigurationen gefunden. `)
         } else {
@@ -197,7 +201,7 @@ class World {
         // 11. --- DEBUG-Tools Initialisierung (nur, wenn this.#isDebugMode true ist) ---
         // Erfolgt NACHDEM Szene, Lichter etc. existieren
         if (this.#isDebugMode) {
-            this.#setupDebugTools() /// Ruft die interne Methode auf
+            this.#setupDebugTools(instanceIdLog) /// Ruft die interne Methode auf
             if (this.#stats) { // #stats wird in #setupDebugTools initialisiert
                 this.#loop.updatables.push(this.#stats) // Füge zum Instanz-Loop hinzu
             }
@@ -474,19 +478,18 @@ class World {
                 // sharedGui.domELement.style.top = '10px'
                 // sharedGui.domElement.style.zIndex = '110' // Über den Stats
         }
-        this.#gui = sharedGui // Jede Instanz referenziert dieselbe GUI
         
         // Nur fortfahren, wenn GUI existiert
-        if (this.#gui) {
+        if (sharedGui) {
             // Ordnername mit Instanz-ID
             const folderName = `Viewer ${this.#instanceId} (${this.#container.id})`
             // Erstelle Ordner für diese Instanz
-            const instanceFolder = this.#gui.addFolder(folderName)
+            this.#gui = sharedGui.addFolder(folderName)
 
             // Hintergrundfarbe (Instanz-spezifisch)
             // Nutzt this.#scene
             const bgColor = { color: `#${this.#scene.background.getHexString()}` }
-            instanceFolder.addColor(bgColor, 'color').name('Hintergrund').onChange(value => {
+            this.#gui.addColor(bgColor, 'color').name('Hintergrund').onChange(value => {
                 this.#scene.background.set(value) // Ändert Szene DIESER Instanz
             })
 
@@ -497,13 +500,100 @@ class World {
             const ambientLight = this.#lights.find(light => light.isAmbientLight)
             if (ambientLight) {
                 // Füge Regler zum Instanz-Ordner hinzu
-                instanceFolder.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
+                this.#gui.add(ambientLight, 'intensity', 0, 5, 0.1).name('Umgebungslicht')
             }
             // Füge AxesHelper-Toggle hinzu
-            instanceFolder.add(this.#axesHelper, 'visible').name('Show Axes')
+            this.#gui.add(this.#axesHelper, 'visible').name('Show Axes')
 
-            // instanceFolder.open() // Diesen Folder öffnen? Besser nicht bei vielen Instanzen.
-            console.log(`[World${instanceIdLog}] GUI-Ordner hinzugefügt.`)
+            // --- Kamera-Regler ---
+            const cameraFolder = this.#gui.addFolder('Kamera') // Füge den Kamera-Ordner zu this.#gui hinzu
+
+            // Position
+            const camPosFolder = cameraFolder.addFolder('Position')
+            camPosFolder.add(this.#camera.position, 'x', -50, 50, 0.1).name('X').listen()
+            camPosFolder.add(this.#camera.position, 'y', -50, 50, 0.1).name('Y').listen()
+            camPosFolder.add(this.#camera.position, 'z', -50, 50, 0.1).name('Z').listen()
+            // camPosFolder.open() // Optional: Diesen Unterordner öffnen
+
+            // Target / LookAt
+            const camTargetFolder = cameraFolder.addFolder('Ziel (LookAt)')
+            camTargetFolder.add(this.#controls.target, 'x', -50, 50, 0.1).name('X').listen()
+            camTargetFolder.add(this.#controls.target, 'y', -50, 50, 0.1).name('Y').listen()
+            camTargetFolder.add(this.#controls.target, 'z', -50, 50, 0.1).name('Z').listen()
+            // camTargetFolder.open()
+
+            // FOV
+            cameraFolder.add(this.#camera, 'fov', 1, 179, 1).name('FOV (Grad)')
+            .onChange(() => {
+                this.#camera.updateProjectionMatrix()
+            }).listen()
+            // cameraFolder.open() // Optional: Den Kamera-Hauptordner öffnen
+
+            // --- Export Button ---
+            const exportSettings = {
+                exportCameraConfig: () => {
+                    const currentCameraConfig = {
+                        initialPosition: {
+                            x: parseFloat(this.#camera.position.x.toFixed(3)),
+                            y: parseFloat(this.#camera.position.y.toFixed(3)),
+                            z: parseFloat(this.#camera.position.z.toFixed(3)),
+                        },
+                        initialLookAt: {
+                            x: parseFloat(this.#controls.target.x.toFixed(3)),
+                            y: parseFloat(this.#controls.target.y.toFixed(3)),
+                            z: parseFloat(this.#controls.target.z.toFixed(3)),
+                        },
+                        fov: parseFloat(this.#camera.fov.toFixed(1)),
+                        disableFramingIfInitialSet: true, // Wichtig für den Export
+                        // Behalte die ursprünglichen Werte für Padding, Near und Far bei
+                        framingPadding: this.#cameraSettings.framingPadding, 
+                        near: this.#cameraSettings.near,
+                        far: this.#cameraSettings.far,
+                    }
+
+                    const jsonConfig = JSON.stringify({ cameraConfig: currentCameraConfig}, null, 2)
+                    console.log('Exportierte Kamera-Konfiguration (für data-config):')
+                    console.log(jsonConfig)
+
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(jsonConfig)
+                            .then(() => {
+                                console.log('Kamera-Konfiguration in die Zwischenablage kopiert!')
+
+                                // exportSettingsButton ist der von lil-gui zurückgegebene Controller.
+                                // Wir können seinen angezeigten Namen direkt mit .name() ändern
+
+                                // Sichere zunächst das richtge Button-Label
+                                const originalName = exportSettingsButton.domElement.innerText
+
+                                if (exportSettingsButton) {
+                                    exportSettingsButton.name('Kopiert!') // Füge Kopierbestätigung als Button-Label für 2 Sek. ein
+                                    setTimeout(() => { 
+                                        // Stelle sicher, dass das Element noch existiert, bevor der Text zurückgesetzt wird.
+                                        if (exportSettingsButton) { 
+                                            exportSettingsButton.name(originalName) // Stelle tatsächliches Button-Label wieder her
+                                        }
+                                    }, 2000) // Default 2 Sekunden
+                                } else {
+                                    console.warn('Button-DOM-Element für Textänderung nicht gefunden oder innerText nicht verfügbar.')
+                                }
+                            })
+                            .catch(err => {
+                                console.warn('Fehler beim Kopieren in die Zwischenablage:', err)
+                                alert('Kopieren in die Zwischenablage fehlgeschlagen. Bitte manuell aus der Konsole kopieren.')
+                            })
+                    } else {
+                        console.warn('Clipboard-API nicht verfügbar. Bitte manuell aus der Konsole kopieren.')
+                        alert('Clipboard-API nicht verfügbar. Bitte manuell aus der Konsole kopieren.')
+                    }
+                } // Ende von exportCameraConfig
+            } // Ende von exportSettings
+            console.log('--------------------------------', this.#gui)
+            const exportSettingsButton = this.#gui.add(exportSettings, 'exportCameraConfig').name('Export Kamera-Config')
+            exportSettingsButton._label = 'Export Kamera-Config'
+            console.log('-------------------------------- exportSettingsButton: ', exportSettingsButton)
+            
+            console.log(`[World${instanceIdLog}] GUI-Ordner für Kamera- und Basis-Settings hinzugefügt.`)
         } else {
             console.log(`[World${instanceIdLog}] KEINE GUI-Instanz verfügbar.`)
         }
@@ -946,23 +1036,19 @@ class World {
                 console.log(`[World${instanceIdLog}] AxesHelper entfernt.`)
             }
             // GUI Ordner entfernen (von der geteilten GUI)
-            if (this.#gui && sharedGui === this.#gui) { // Nur, wenn diese Instanz eine globale GUI hat
+            if (this.#gui && sharedGui) { // Prüfe ob der Instanz-Ordner (this.#gui) UND die globale GUI (sharedGui) existieren
                 guiRefCount-- // Referenzzähler reduzieren
-                const folderName = `Viewer ${this.#instanceId} (${this.#container?.id})`
                 try {
-                    // Finde den Ordner dieser Instanz und zerstöre ihn
-                    const folder = this.#gui.folders.find(f => f._title === folderName)
-                    if (folder) {
-                        folder.destroy()
-                        console.log(`[World${instanceIdLog}] GUI Ordner '${folderName}' entfernt.`)
-                    } else {
-                        console.warn(`[World${instanceIdLog}] GUI Ordner '${folderName} nicht gefunden zum Entfernen`)
-                    }
-                } catch (e) { console.warn("Fehler beim Entfernen des GUI-Ordners:", e) }
+                    // Da this.#gui jetzt der spezifische Ordner ist, können wir ihn direkt zerstören.
+                    this.#gui.destroy()
+                     console.log(`[World${instanceIdLog}] GUI Ordner '${this.#gui.title}' entfernt.`)
+                } catch (e) { 
+                    console.warn(`[World${instanceIdLog}] Fehler beim Entfernen des GUI-Ordners: `, e, this.#gui) 
+                }
 
                 // Zerstöre die globale GUI nur, wenn keine Instanz mehr sie mehr braucht
-                if (guiRefCount <= 0 && sharedGui) {
-                    console.log("Zerstöre geteilte GUI.")
+                if (guiRefCount <= 0 && sharedGui) { // sharedGui hier erneut prüfen, da es in seltenen Fällen null sein könnte
+                    console.log("Zerstöre geteilte GUI, da keine Referenzen mehr vorhanden sind.")
                     sharedGui.destroy()
                     sharedGui = null
                 }
