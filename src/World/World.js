@@ -648,7 +648,8 @@ class World {
 
             // --- Export Button ---
             const exportSettings = {
-                exportCameraConfig: () => {
+                exportFullConfig: () => {
+                    // 1. Kamera-Konfiguration sammeln
                     const currentCameraConfig = {
                         initialPosition: {
                             x: parseFloat(this.#camera.position.x.toFixed(3)),
@@ -668,14 +669,58 @@ class World {
                         far: this.#cameraSettings.far,
                     }
 
-                    const jsonConfig = JSON.stringify({ cameraConfig: currentCameraConfig}, null, 2)
-                    console.log('Exportierte Kamera-Konfiguration (für data-config):')
+                    // Licht-Konfiguration sammeln
+                    const exportedLightSettings = []
+                    this.#lights.forEach((light, index) => {
+                        const lightConfig = {
+                            type: light.constructor.name, // Gibt z.B. "AmbientLight", "DirectionalLight"
+                            name: light.name || `${light.constructor.name}_Exported_${index}`,
+                            color: `#${light.color.getHexString()}`, 
+                            intensity: parseFloat(light.intensity.toFixed(2)) // Mit 2 Nachkommastellen
+                        }
+                        
+                        // Position hinzufügen, falls vorhanden (nicht für AmbientLight)
+                        if (light.position) {
+                            lightConfig.position = {
+                                x: parseFloat(light.position.x.toFixed(3)),
+                                y: parseFloat(light.position.y.toFixed(3)),
+                                z: parseFloat(light.position.z.toFixed(3))
+                            }
+                        }
+
+                        // Target-Position für DirectionalLight hinzufügen
+                        if (light.isDirectionalLight && light.target && light.target.position) {
+                            lightConfig.targetPosition = {
+                                x: parseFloat(light.target.position.x.toFixed(3)),
+                                y: parseFloat(light.target.position.y.toFixed(3)),
+                                z: parseFloat(light.target.position.z.toFixed(3))
+                            }
+                        }
+
+                        // Spezifische Eigenschafte für PointLight
+                        if (light.isPointLight) {
+                            lightConfig.distance = parseFloat(light.distance.toFixed(2)),
+                            lightConfig.decay = parseFloat(light.decay.toFixed(2))
+                        }
+                        // Hier können weitere lichttypspezifische Eigenschaften hinzugefügt werden (z.B. für SpotLight)
+
+                        exportedLightSettings.push(lightConfig)
+                    })
+
+                    // Gesamtkonfiguration erstellen
+                    const fullConfig = {
+                        cameraConfig: currentCameraConfig, 
+                        lightSettings: exportedLightSettings // Füge die Light-Settings hinzu
+                    }
+
+                    const jsonConfig = JSON.stringify(fullConfig, null, 2)
+                    console.log('Exportierte Gesamt-Konfiguration (für data-config):')
                     console.log(jsonConfig)
 
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(jsonConfig)
                             .then(() => {
-                                console.log('Kamera-Konfiguration in die Zwischenablage kopiert!')
+                                console.log('Gesamt-Konfiguration in die Zwischenablage kopiert!')
 
                                 // exportSettingsButton ist der von lil-gui zurückgegebene Controller.
                                 // Wir können seinen angezeigten Namen direkt mit .name() ändern
@@ -703,11 +748,11 @@ class World {
                         console.warn('Clipboard-API nicht verfügbar. Bitte manuell aus der Konsole kopieren.')
                         alert('Clipboard-API nicht verfügbar. Bitte manuell aus der Konsole kopieren.')
                     }
-                } // Ende von exportCameraConfig
+                } // Ende von exportFullConfig
             } // Ende von exportSettings
             console.log('--------------------------------', this.#gui)
-            const exportSettingsButton = this.#gui.add(exportSettings, 'exportCameraConfig').name('Export Kamera-Config')
-            exportSettingsButton._label = 'Export Kamera-Config'
+            const exportSettingsButton = this.#gui.add(exportSettings, 'exportFullConfig').name('Export Gesamt-Config')
+            exportSettingsButton._label = 'Export Gesamt-Config'
             console.log('-------------------------------- exportSettingsButton: ', exportSettingsButton)
 
             console.log(`[World${instanceIdLog}] GUI-Ordner für Kamera- und Basis-Settings hinzugefügt.`)

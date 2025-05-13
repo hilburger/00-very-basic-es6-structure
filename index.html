@@ -18,36 +18,50 @@
              id="viewer-1" data-config='{
                 "cameraConfig": {
                     "initialPosition": {
-                    "x": -1.478,
-                    "y": 0.69,
-                    "z": 2.131
+                      "x": 0.5,
+                      "y": 0.5,
+                      "z": 2
                     },
                     "initialLookAt": {
-                    "x": -0.093,
-                    "y": 0.761,
-                    "z": -0.465
+                      "x": -0.093,
+                      "y": 0.761,
+                      "z": -0.465
                     },
                     "fov": 48,
                     "disableFramingIfInitialSet": true,
                     "framingPadding": 1.3,
                     "near": 0.1,
                     "far": 100
-                },
-                "lightSettings": [
+                  },
+                  "lightSettings": [
                     {
-                        "type": "AmbientLight",
-                        "color": "#ffffff",
-                        "intensity": 0.4,
-                        "name": "MyConfigAmbient" 
+                      "type": "AmbientLight",
+                      "name": "MyConfigAmbient",
+                      "color": "#fd1212",
+                      "intensity": 2.2,
+                      "position": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                      }
                     },
                     {
-                        "type": "DirectionalLight",
-                        "name": "MyConfigDirectional",
-                        "color": "#ffeedd",
-                        "intensity": 1.2,
-                        "position": { "x": 5, "y": 8, "z": 3 }
+                      "type": "DirectionalLight",
+                      "name": "MyConfigDirectional",
+                      "color": "#ffeedd",
+                      "intensity": 1.2,
+                      "position": {
+                        "x": 5,
+                        "y": 8,
+                        "z": 3
+                      },
+                      "targetPosition": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                      }
                     }
-                ],
+                  ],
                 "sceneItems": [
                     {
                         "type": "gltf", 
@@ -93,9 +107,83 @@
         <div class="threejs-viewer-container" 
              id="viewer-2" data-config='{
                 "cameraConfig": {
+                    "initialPosition": {
+                      "x": -0.006,
+                      "y": 1.146,
+                      "z": 2.139
+                    },
+                    "initialLookAt": {
+                      "x": -0.006,
+                      "y": 0.873,
+                      "z": 0.004
+                    },
                     "fov": 58,
-                    "framingPadding": 1.3
+                    "disableFramingIfInitialSet": true,
+                    "framingPadding": 1.3,
+                    "near": 0.1,
+                    "far": 100
                 },
+                "lightSettings": [
+                {
+                    "type": "DirectionalLight",
+                    "name": "DirectionalLight_Default_0",
+                    "color": "#29ff74",
+                    "intensity": 3,
+                    "position": {
+                    "x": 10,
+                    "y": 10,
+                    "z": 10
+                    },
+                    "targetPosition": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                    }
+                },
+                {
+                    "type": "DirectionalLight",
+                    "name": "DirectionalLight_Default_1",
+                    "color": "#ffffff",
+                    "intensity": 1,
+                    "position": {
+                    "x": -10,
+                    "y": 7.5,
+                    "z": 5
+                    },
+                    "targetPosition": {
+                    "x": 0,
+                    "y": 1.8,
+                    "z": 0
+                    }
+                },
+                {
+                    "type": "DirectionalLight",
+                    "name": "DirectionalLight_Default_2",
+                    "color": "#ffffff",
+                    "intensity": 1.5,
+                    "position": {
+                    "x": 0,
+                    "y": 5,
+                    "z": -10
+                    },
+                    "targetPosition": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                    }
+                },
+                {
+                    "type": "AmbientLight",
+                    "name": "AmbientLight_Default_3",
+                    "color": "#ffffff",
+                    "intensity": 0.5,
+                    "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                    }
+                }
+                ],
                 "sceneItems": [
                     {
                         "type": "gltf", 
