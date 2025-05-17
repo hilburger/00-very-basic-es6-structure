@@ -6,7 +6,12 @@ import {
     Box3, Sphere, Vector3, 
     AmbientLight, DirectionalLight, PointLight, 
     Object3D, // Für das Target von DirectionalLight
-    DirectionalLightHelper, PointLightHelper
+    DirectionalLightHelper, PointLightHelper, 
+    // Für Environment Maps und korrekte Darstellung
+    ACESFilmicToneMapping, // Empfohlenes Tone Mapping für HDR
+    SRGBColorSpace, // Korrekter Output Color Space
+    EquirectangularReflectionMapping, // Mapping-Typ für HDRIs
+    PMREMGenerator // Für die Verarbeitung von HRDIa zu Cube Maps
 } from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
@@ -25,7 +30,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 // -- Importiere Asset Ladefunktionen  ---
 // Die Funktionen erwarten jetzt optional einen Manager
-import { loadGltf, loadTexture } from './systems/assetLoader.js'
+import { loadGltf, loadTexture, loadEnvironmentMap } from './systems/assetLoader.js'
 
 // Komponenten-Klassen
 import { Cube } from './components/Cube.js' // Eigene Klasse für Erstellung von Cubes mit Materialien und Texturen
@@ -70,6 +75,17 @@ class World {
     #cameraSettings = {}
     #lightSettingsFromConfig = [] // SPeichert Lichter aus der Config
 
+    // Environment Map Variablen
+    #environmentMapUrl // URL aus der Config
+    #environmentMapProcessed = null // Die prozessierte Environment Map Textur
+    #environmentMapIntensity = 1.0 // Default Intensity
+    #environmentMapRotationY = 0.0 // Default roration in Radiant
+    #pmremGenerator = null // PMREMGenereator Instanz
+
+    #useEnvMapAsBackground = true
+    #solidBackgroundColor = new Color(0x222233)
+    #guiBgColorController = null // Referent auf den GUI-Controller für den Farb-Picker (optional)
+
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
     constructor(container, mainConfig, isDebugMode = false, instanceId) {
         this.#container = container // Container für diese Instanz speichern
@@ -96,6 +112,31 @@ class World {
             ? mainConfig.lightSettings
             : []
 
+        // Environment Konfiguration aus mainConfig extrahieren
+        const envMapConfig = mainConfig?.environmentMap || {}
+        this.#environmentMapUrl = envMapConfig.url // kann undefined sein
+        this.#environmentMapIntensity = envMapConfig.intensity !== undefined ? Number(envMapConfig.intensity) : this.#environmentMapIntensity
+        this.#environmentMapRotationY = envMapConfig.rotationY !== undefined ? Number (envMapConfig.rotationY) : this.#environmentMapRotationY
+
+        // Hintergrundeinstellungen aus Config auslesen
+        const backgroundSettings = mainConfig?.backgroundSettings || {}
+        // Wenn useEnvMapAsBackground in der Config definiert ist, nimm diesen Wert, 
+        // sonst nur true, wenn auch eine environmentMapUrl vorhanden ist.
+        if (backgroundSettings.useEnvironmentMapAsBackground !== undefined) {
+            this.#useEnvMapAsBackground = backgroundSettings.useEnvironmentMapAsBackground
+        } else {
+            this.#useEnvMapAsBackground = !!this.#environmentMapUrl // true nur, wenn URL vorhanden ist    
+        }
+
+        if (backgroundSettings.color) {
+            this.#solidBackgroundColor = new Color(backgroundSettings.color)
+        }
+        // Wenn useEnvMapsAsBackground true ist, aber keine EnvMap-URL da ist, erzwinge Solid Color
+        if (this.#useEnvMapAsBackground && !this.#environmentMapUrl) {
+            this.#useEnvMapAsBackground = false
+            console.warn(`[World${instanceIdLog}] 'useEnvironmentMapAsBackground' ist true, aber keine EnvironmentMap-URL gefunden. Wechsle zu Vollton-Background`)
+        }
+
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
         
@@ -107,6 +148,15 @@ class World {
             console.log(`[World${instanceIdLog}] ${this.#lightSettingsFromConfig.length} benutzerdefinierte Lichtkonfigurationen gefunden. `)
         } else {
             console.log(`[World${instanceIdLog}] Keine benutzerdefinierten Lichtkonfigurationen gefunden. Standards aus lights.js werden verwendet.`)
+        }
+
+        if (this.#environmentMapUrl) {
+            console.log(`[World${instanceIdLog}] Environment Map konfiguriert: URL='${this.#environmentMapUrl}', Intensität=${this.#environmentMapIntensity}, Rotation=${this.#environmentMapRotationY}, Als Hintergrund: ${this.#useEnvMapAsBackground}`)
+        } else {
+            console.log(`[World${instanceIdLog}] Keine Environment Map URL gefunden`)
+        }
+        if (!this.#useEnvMapAsBackground) {
+            console.log(`[World${instanceIdLog}] Vollton-Hintergrund onfiguriert: Farbe=${this.#solidBackgroundColor.getHexString()}`)
         }
 
         // --- Instanzfelder initialisieren ---
@@ -121,6 +171,17 @@ class World {
         this.#camera = this.#createCamera() // Nutzt jetzt this.#container für Aspect Ratio
         this.#renderer = this.#createRenderer()
 
+        // PRREMGenerator initialisieren (nach dem Renderer!) - für EnvironmentMap-Behandlung
+        if (this.#renderer) { // Sicherstellen, dass der Renderer auch existiert
+            this.#pmremGenerator = new PMREMGenerator(this.#renderer)
+            // Optional: Shader vorkompilieren, um erstes STottern beim Laden der EnvMap zu vermeiden
+            // Kann bei sehr vielen Instanzen oder langsamen Geräten etwas dauern.
+            this.#pmremGenerator.compileEquirectangularShader() // Kann zu "WebGL: INVALID_OPERATION: readPixels: buffer is not complete" führen, wenn zu früh aufgerufen!
+            console.log(`[World${instanceIdLog}] PMREMGenerataor initialisiert.`)
+        } else {
+            console.error(`[World${instanceIdLog}] Renderer konnte nicht initialisiert werden. PMREMGenerator nicht erstellt.`)
+        }
+
         // 3. Canvas DIESER Instanz zum Container hinzufügen
         this.#container.append(this.#renderer.domElement)
 
@@ -134,6 +195,11 @@ class World {
 
         // 4. Loading Manager Instanz erstellen und Callback definieren
         this.#setupLoadingManager(instanceIdLog)
+
+        // Environment Map Setup aufrufen (nach LoadingManager, vor Items in init)
+        // Muss nach dem Initialisieren des PMREMGenerators und LoadingManagers erfolgen.
+        this.#setupEnvironmentMap(instanceIdLog)
+
 
         // 2. Raycasting für diese Instanz initialisieren
         this.#raycaster = new Raycaster()
@@ -372,7 +438,7 @@ class World {
 
     #createScene() {
         const scene = new Scene()
-        scene.background = new Color(0xabcdef)
+        // scene.background = new Color(0xabcdef) // Defaultwert, soll aber via EnvironmentMap geladen werden. Default denkbar, wenn this.#environmentMapUrl leer ist.
         return scene
     }
 
@@ -382,9 +448,106 @@ class World {
             // Optional: Wenn Performance auf Mobilgeräten wichtig ist
             // powerPreferences: 'high-performance'
         })
-        renderer.outputColorSpace = 'srgb' // Wichtiges Farbsetting
+        renderer.toneMapping = ACESFilmicToneMapping // Empfohlenes Tone Mapping
+        renderer.toneMappingExposure = 1.0 // Default, kann später justiert werden
+        renderer.outputColorSpace = SRGBColorSpace // Wichtiges Farbsetting
+
         // Größe wird durch Resizer gesetzt, nicht hier
+        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB`)
         return renderer
+    }
+
+    async #setupEnvironmentMap(instanceIdLog){
+        if (!this.#environmentMapUrl) {
+            console.log(`[World${instanceIdLog}] Keine Environment Map URL konfiguriert? -> Überspringe Setup`)
+            this.#useEnvMapAsBackground = false
+            this.#updateBackgroundAppearance(instanceIdLog) // Setze Fallback (Solid Color)
+            return
+        }
+
+        if (!this.#pmremGenerator) {
+            console.error(`[World${instanceIdLog}] PRREMGenerator nicht initialisiert. EnvironmentMap kann nicht prozessiert werden.`)
+            if (!this.#scene.background) {
+                this.#scene.background = new Color(0x330000) // Dunkelrot als Indikator für schweren Fehler
+            }
+            return
+        }
+
+        console.log(`[World${instanceIdLog}] Starte Laden der Environment Map: ${this.#environmentMapUrl}`)
+        const loadingManagerKey = `envMap-${this.#instanceId}` // Eindeutiger Key für LoadingManager
+        this.#loadingManager.itemStart(loadingManagerKey)
+
+        try {
+            const hdrTexture = await loadEnvironmentMap(this.#environmentMapUrl, this.#loadingManager)
+            hdrTexture.mapping = EquirectangularReflectionMapping // Wichtig für korrekten Projektion
+
+            console.log(`[World${instanceIdLog}] Environment Map Textur geladen, starte PMREM-Processing...`)
+            const envMap = this.#pmremGenerator.fromEquirectangular(hdrTexture).texture
+
+            this.#environmentMapProcessed = envMap // Speichere die prozessierte Map
+
+            this.#scene.environment = this.#environmentMapProcessed
+            this.#scene.background = this.#environmentMapProcessed // Setze auch als sichtbaren Hintergrund
+
+            hdrTexture.dispose() // Ursprüngliche (unporzessierte) Textur freigeben
+            console.log(`[World${instanceIdLog}] Environment Map erfolgreich prozessiert und der Szene zugewiesen.`)
+
+            this.#applyEnvironmentMapSettings(instanceIdLog) // Initiale Einstellungen anwenden
+
+            // Hintergrund basierend auf User-Wahl setzen
+            this.#updateBackgroundAppearance(instanceIdLog)
+
+            this.#loadingManager.itemEnd(loadingManagerKey)
+
+        } catch (error) {
+            console.error(`[World${instanceIdLog}] Fehler beim Laden/Prozessieren der EnvMap: ${this.#environmentMapUrl}`, error);
+            this.#loadingManager.itemError(loadingManagerKey);
+            this.#environmentMapProcessed = null; // Sicherstellen, dass sie als nicht verfügbar markiert ist
+            this.#useEnvMapAsBackground = false; // Bei Fehler keine EnvMap als BG
+            this.#updateBackgroundAppearance(instanceIdLog); // Setze Fallback (Solid Color)
+        }
+    }
+
+    #applyEnvironmentMapSettings(instanceIdLogPassed) { // instanceIdLogPassed, um Konflikt zu vermeiden, falls nicht immer von von einer Methode mit instanceIDLog aufgerufen
+        const instanceIdLog = instanceIdLogPassed || ` Instance ${this.#instanceId} (${this.#container?.id || '?'})`
+
+        if (this.#scene && this.#environmentMapProcessed) {
+            this.#scene.environmentIntensity = this.#environmentMapIntensity
+
+            if (this.#scene.environmentRotation) {
+                this.#scene.environmentRotation.y = this.#environmentMapRotationY
+            } else {
+                console.warn(`[World${instanceIdLog}] scene.environmentRotation nicht verfügbar`)
+            }
+            console.log(`[World${instanceIdLog}] EnvironmentMap-Settings angewendet: Intensität=${this.#environmentMapIntensity}, RotationY=${this.#environmentMapRotationY}`)
+        }
+    }
+
+    #updateBackgroundAppearance(instanceIdLogPassed) {
+        const instanceIdLog = instanceIdLogPassed || ` Instance ${this.#instanceId} (${this.#container?.id || '?'})`
+        
+        if (this.#useEnvMapAsBackground && this.#environmentMapProcessed) {
+            this.#scene.background = this.#environmentMapProcessed
+            console.log(`[World${instanceIdLog}] Hintergrund auf Environment Map gesetzt.`)
+            // Optional: GUI-Farbpicker deaktivieren/verstecken
+            if (this.#guiBgColorController) {
+                // 3 Optionen möglich:
+                // this.#guiBGColorController.domElement.style.display = 'none' // Verstecken
+                this.#guiBgColorController.hide() // Verstecken
+                // this.#guiBgColorController.disable(true) // Deaktivieren ist oft besser
+            }
+        } else {
+            this.#scene.background = this.#solidBackgroundColor	
+            console.log(`[World${instanceIdLog}] Hintergrund auf Solid Color #${this.#solidBackgroundColor.getHexString()} gesetzt.`)
+            // Optional: GUI-Farb-Picker aktivieren/anzeigen und Wert aktualisieren
+            if (this.#guiBgColorController) {
+                // 3 Optionen möglich:
+                // this.#guiBgColorController.domElement.style.display = ''; // Anzeigen
+                this.#guiBgColorController.show() // Anzeigen
+                // this.#guiBgColorController.disable(false); // Aktivieren
+                this.#guiBgColorController.setValue(`#${this.#solidBackgroundColor.getHexString()}`); // Sicherstellen, dass der Picker den korrekten Wert hat
+            }
+        }
     }
 
     // --- Methoden für Ladeanzeige ---
@@ -528,9 +691,24 @@ class World {
 
             // Hintergrundfarbe (Instanz-spezifisch)
             // Nutzt this.#scene
-            const bgColor = { color: `#${this.#scene.background.getHexString()}` }
-            this.#gui.addColor(bgColor, 'color').name('Hintergrund').onChange(value => {
-                this.#scene.background.set(value) // Ändert Szene DIESER Instanz
+            // Dieser Regler wird die Environment Map als Hintergrund überschreiben, wenn sie aktiv ist. 
+            // Wir könnten dies später mit einem Umschalter verbessern. 
+            let currentBgValue;
+            if (this.#scene.background && this.#scene.background.isColor) {
+                currentBgValue = `#${this.#scene.background.getHexString()}`
+            } else {
+                // Wenn Hintergrund Textur oder null, starte mit einer Default-Farbe für den Regler
+                currentBgValue = '#222233' // Entpricht dem Fallback-Hintergrund
+            }
+            const bgColor = { color: currentBgValue}
+
+            this.#gui.addColor(bgColor, 'color').name('Hintergrundfarbe').onChange(value => {
+                // Wenn der Benutzer die Farbe ändert, setzen wir immer eine Farbe. 
+                // Die Environment Map als Hintergrund wird dadurch ggf. entfernt oder überschrieben. 
+                if (this.#scene.background && this.#scene.background.isTexture) {
+                    // this.background.dispose( // Nicht disposen, wenn es eine EnvMap ist!
+                }
+                this.#scene.background = new Color(value)
             })
 
             // Umgebungslicht (Instanz-spezifisch)

@@ -5,6 +5,7 @@ import {
 
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 
 // Optional: DRACO-Kompression-Loader initialisieren (Nur 1x nötig, ist global)
 // Der Pfad zu den DRACO-Decoder-Dateien muss angegeben werden
@@ -64,4 +65,18 @@ async function loadGltf(url, manager) {
     }
 }
 
-export { loadTexture, loadGltf }
+async function loadEnvironmentMap(url, manager) {
+    // RGBELoader erwartet den Manager im Constructor
+    const rgbeLoader = new RGBELoader(manager)
+    try {
+        const texture = await rgbeLoader.loadAsync(url)
+        console.log(`Environment Map (HDRI) geladen: ${url}`)
+        // Wichtige Einstellungen für Environment Map werden werden in World.js gesetzt (mapping, etc.)
+        return texture
+    } catch (error) {
+        console.error(`Fehler beim Laden der Environment Map: ${url}`, error)
+        throw error
+    }
+}
+
+export { loadTexture, loadGltf, loadEnvironmentMap }
