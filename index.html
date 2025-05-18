@@ -33,11 +33,6 @@
                     "near": 0.1,
                     "far": 100
                   },
-                  "environmentMap": {
-                    "url": "./textures/environment/blue_photo_studio_1k.hdr",
-                    "intensity": 1.5,
-                    "rotationY": 0.0
-                  },
                   "lightSettings": [
                     {
                       "type": "AmbientLight",
@@ -67,6 +62,15 @@
                       }
                     }
                   ],
+                "environmentMap": {
+                  "url": "./textures/environment/blue_photo_studio_1k.hdr",
+                  "intensity": 1.5,
+                  "rotationY": 0
+                },
+                "backgroundSettings": {
+                  "useEnvironmentMapAsBackground": false,
+                  "color": "#222233"
+                },
                 "sceneItems": [
                     {
                         "type": "gltf", 

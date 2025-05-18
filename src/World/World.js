@@ -548,6 +548,13 @@ class World {
                 this.#guiBgColorController.setValue(`#${this.#solidBackgroundColor.getHexString()}`); // Sicherstellen, dass der Picker den korrekten Wert hat
             }
         }
+
+        if (this.guiUseEnvMapBgController) { // Controller für den Switch
+            this.guiUseEnvMapBgController.setValue(this.#useEnvMapAsBackground)
+            // Die Deaktivierungslogik für den Switch, falls EnvMap nicht bereit ist (kann hier wiederholt oder zentralisiert werden)        
+            const isEnvMapReady = !!this.#environmentMapProcessed
+            this.guiUseEnvMapBgController.disable(!isEnvMapReady && !!this.#environmentMapUrl)
+        }
     }
 
     // --- Methoden für Ladeanzeige ---
@@ -689,27 +696,121 @@ class World {
             // Erstelle Ordner für diese Instanz
             this.#gui = sharedGui.addFolder(folderName)
 
-            // Hintergrundfarbe (Instanz-spezifisch)
-            // Nutzt this.#scene
-            // Dieser Regler wird die Environment Map als Hintergrund überschreiben, wenn sie aktiv ist. 
-            // Wir könnten dies später mit einem Umschalter verbessern. 
-            let currentBgValue;
-            if (this.#scene.background && this.#scene.background.isColor) {
-                currentBgValue = `#${this.#scene.background.getHexString()}`
-            } else {
-                // Wenn Hintergrund Textur oder null, starte mit einer Default-Farbe für den Regler
-                currentBgValue = '#222233' // Entpricht dem Fallback-Hintergrund
-            }
-            const bgColor = { color: currentBgValue}
+            // --- Hintergrundsteuerung ---
+            const backgroundFolder = this.#gui.addFolder('Hintergrund')
+            // backgroundFolder.open() 
 
-            this.#gui.addColor(bgColor, 'color').name('Hintergrundfarbe').onChange(value => {
-                // Wenn der Benutzer die Farbe ändert, setzen wir immer eine Farbe. 
-                // Die Environment Map als Hintergrund wird dadurch ggf. entfernt oder überschrieben. 
-                if (this.#scene.background && this.#scene.background.isTexture) {
-                    // this.background.dispose( // Nicht disposen, wenn es eine EnvMap ist!
+            // Temporäres Objekt für den Farb-Picker, da lil-gui direkt auf Objekteigenschaften zugreift
+            const bgColorProxy = { color: `#${this.#solidBackgroundColor.getHexString()}` }
+            
+
+            // Farb-Picker für Volton-Hintergrund
+            // Speichere den Controller, um ihn später zu de-/aktivieren
+            this.#guiBgColorController = backgroundFolder.addColor(bgColorProxy, 'color')
+                .name('Farbe (Solid)')
+                .onChange(value => {
+                    this.#solidBackgroundColor.set(value)
+                    // Wenn der User die Farbe ändert, wollen wir definitiv die Volltonfarbe sehen
+                    if (this.#useEnvMapAsBackground) { // Wenn vorher EnvMap als BG war
+                        this.#useEnvMapAsBackground = false
+                        // Aktualisiere den GUI-Switch (wenn er schon existiert)
+                        if (this.guiUseEnvMapBgController) {
+                            this.guiUseEnvMapBgController.setValue(false)
+                        }
+                    }
+                    this.#updateBackgroundAppearance(instanceIdLog)
+                })
+
+            // --- Environment Map Ordner und Steuerelemente ---
+            if (this.#environmentMapUrl) {
+                const envMapFolder = this.#gui.addFolder('Umgebung (IBL & Hintergrund)')
+                // envMapFolder.open()
+
+                // Proxyobjekt für Environment Map GUI-Steuerung
+                const envMapGuiProxy = {
+                    intensity: this.#environmentMapIntensity, 
+                    rotationY: this.#environmentMapRotationY, 
+                    useAsBackground: this.#useEnvMapAsBackground
                 }
-                this.#scene.background = new Color(value)
-            })
+
+                //IBL-Regler (Intensität & Rotation für scene-environment)
+                const intensityController = envMapFolder.add(envMapGuiProxy, 'intensity', 0, 5, 0.01) // Verwende Proxy
+                    .name('IBL Intensität')
+                    .onChange((value) => {
+                        this.#environmentMapIntensity = value // Synchronisiere mit peivatem Feld
+                        if (this.#environmentMapProcessed) {
+                            this.#applyEnvironmentMapSettings(instanceIdLog)
+                        }
+                    })
+
+                const rotationController = envMapFolder.add(envMapGuiProxy, 'rotationY', 0, Math.PI * 2, 0.01) // Verwende Proxy
+                    .name('IBL Rotation Y')
+                    .onChange((value) => {
+                        this.#environmentMapRotationY = value // Synchronisiere mit privatem Feld
+                        if (this.#environmentMapProcessed) {
+                            this.#applyEnvironmentMapSettings(instanceIdLog)
+                        }
+                    })
+
+                // Speichere den Controller für den Switch, um ihn später zu aktualisieren/deaktivieren
+                // Wichtig: `this.guiUseEnvMapBgController` ohne `#` ist eine "normale" Instanzeigenschaft
+                this.guiUseEnvMapBgController = envMapFolder.add(envMapGuiProxy, 'useAsBackground') // Verwende Proxy
+                    .name('EnvMap als Hintergrund')
+                    .onChange((value) => {
+                        // 'value' ist der neue Zustand der Checkbox
+                        this.#useEnvMapAsBackground = value // Synchronisiere mit privatem Feld
+                        this.#updateBackgroundAppearance(instanceIdLog)
+                    })
+
+                // Initialen Zustand der GUI-Elemente setzen (wird auch in #updateBackgroundAppearance gemacht,
+                // aber hier einmalig für die Deaktivierung bei nicht geladener Map)
+                const isEnvMapReady = !!this.#environmentMapProcessed
+
+                intensityController.disable(!isEnvMapReady) // Deaktiviere, wenn Map nicht bereit
+                rotationController.disable(!isEnvMapReady) // Deaktiviere, wenn Map nicht bereit
+                if (this.guiUseEnvMapBgController) {
+                    this.guiUseEnvMapBgController.disable(!isEnvMapReady)
+                }
+
+                if (!isEnvMapReady) {
+                    envMapFolder.add({ status: 'Map lädt/fehlt...' }, 'status')
+                        .name('Status').disable()
+                }
+                // Rufe dies auf, um sicherstellen, dass der ColorPicker und Switch
+                // den korrekten initialen Zustand basierend auf der Config haben. 
+                this.#updateBackgroundAppearance(instanceIdLog)
+
+            } else { // Kein #environmentMapUrl
+                // Stelle sicher, dass der Farb-Picker aktiviert ist, wenn keine EnvMap da ist
+                if (this.#guiBgColorController) {
+                    this.#guiBgColorController.disable(false)
+                }
+                // Rufe #updateBackgroundAppearance auf, um sicherstellen, dass der SolidColor-Hintergrund gesetzt wird
+                this.#updateBackgroundAppearance(instanceIdLog)
+            }
+
+            // // Hintergrundfarbe (Instanz-spezifisch)
+            // // Nutzt this.#scene
+            // // Dieser Regler wird die Environment Map als Hintergrund überschreiben, wenn sie aktiv ist. 
+            // // Wir könnten dies später mit einem Umschalter verbessern. 
+            // let currentBgValue;
+            // if (this.#scene.background && this.#scene.background.isColor) {
+            //     currentBgValue = `#${this.#scene.background.getHexString()}`
+            // } else {
+            //     // Wenn Hintergrund Textur oder null, starte mit einer Default-Farbe für den Regler
+            //     currentBgValue = '#222233' // Entpricht dem Fallback-Hintergrund
+            // }
+            // const bgColor = { color: currentBgValue}
+
+            // this.#gui.addColor(bgColor, 'color').name('Hintergrundfarbe').onChange(value => {
+            //     // Wenn der Benutzer die Farbe ändert, setzen wir immer eine Farbe. 
+            //     // Die Environment Map als Hintergrund wird dadurch ggf. entfernt oder überschrieben. 
+            //     if (this.#scene.background && this.#scene.background.isTexture) {
+            //         // this.background.dispose( // Nicht disposen, wenn es eine EnvMap ist!
+            //     }
+            //     this.#scene.background = new Color(value)
+            // })
+
 
             // Umgebungslicht (Instanz-spezifisch)
             // Nutzt this.#lights
@@ -885,15 +986,37 @@ class World {
                         exportedLightSettings.push(lightConfig)
                     })
 
+                    // Environment Map Einstellungen zum Export hinzufügen
+                    const exportedEnvMapSettings = {}
+                    if (this.#environmentMapUrl) {
+                        exportedEnvMapSettings.url = this.#environmentMapUrl
+                        exportedEnvMapSettings.intensity = parseFloat(this.#environmentMapIntensity.toFixed(2))
+                        exportedEnvMapSettings.rotationY = parseFloat(this.#environmentMapRotationY.toFixed(3))
+                        // useAsBackground wird jetzt über backgroundSettings exportiert
+                    }
+
+                    // Hintergrund-Einstellungen exportieren
+                    const exportedBackgroundSettings = {
+                        useEnvironmentMapAsBackground: this.#useEnvMapAsBackground, // Der aktuelle Zustand
+                        color: `#${this.#solidBackgroundColor.getHexString()}` // Die aktuell gewählte Volltonfarbe
+                    }
+
                     // Gesamtkonfiguration erstellen
                     const fullConfig = {
                         cameraConfig: currentCameraConfig, 
-                        lightSettings: exportedLightSettings // Füge die Light-Settings hinzu
+                        lightSettings: exportedLightSettings, // Füge die Light-Settings hinzu
+                        // Behalte den Namen 'environmentMap' für die Config-Datei, wie in deiner index.html
+                        ...(Object.keys(exportedEnvMapSettings).length > 0 && { environmentMap: exportedEnvMapSettings }), 
+                        backgroundSettings: exportedBackgroundSettings
                     }
 
                     const jsonConfig = JSON.stringify(fullConfig, null, 2)
                     console.log('Exportierte Gesamt-Konfiguration (für data-config):')
                     console.log(jsonConfig)
+
+                    /**
+                     * AB HIER prüfen
+                     */
 
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(jsonConfig)
