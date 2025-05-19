@@ -1,17 +1,18 @@
-// src/World/World.js
+// src/World/World.js 00:24
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
     LoadingManager, Raycaster, Vector2, AxesHelper, Color, Scene, PerspectiveCamera, WebGLRenderer, 
-    Box3, Sphere, Vector3, 
+    Mesh, Box3, Sphere, Vector3, 
     AmbientLight, DirectionalLight, PointLight, 
     Object3D, // Für das Target von DirectionalLight
-    DirectionalLightHelper, PointLightHelper, 
+    DirectionalLightHelper, PointLightHelper, CameraHelper,
     // Für Environment Maps und korrekte Darstellung
     ACESFilmicToneMapping, // Empfohlenes Tone Mapping für HDR
     SRGBColorSpace, // Korrekter Output Color Space
     EquirectangularReflectionMapping, // Mapping-Typ für HDRIs
-    PMREMGenerator // Für die Verarbeitung von HRDIa zu Cube Maps
+    PMREMGenerator, // Für die Verarbeitung von HRDIa zu Cube Maps
+    PCFSoftShadowMap, // ShadowMap-Types - Beispiel für einen weichen Schatten-Typ
 } from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
@@ -289,15 +290,29 @@ class World {
                 light.userData.helper.dispose?.() // ?. für den Fall, dass dispose nicht existiert
                 delete light.userData.helper // Entferne die Referenz
             }
+
+            // Optional: 
+            if (light.userData.shadowCameraHelper) {
+                this.#scene.remove(light.userData.shadowCameraHelper)
+                light.userData.shadowCameraHelper.dispose?.()
+                delete light.userData.shadowCameraHelper
+            }
+
             this.#scene.remove(light)
-            if (light.target) { // Für DirectLight
+            if (light.target && light.target.parent === this.#scene) { // Für DirectLight
                 this.#scene.remove(light.target) 
             }
         })
         this.#lights = []
 
+        // Log-Ausgabe soll klarer zeigen, ob Config oder Defaults verwendet werden
+        console.log(`World${instanceIdLog} Erstelle Lichter basierend auf` + (this.#lightSettingsFromConfig.length > 0 ? 'data-config' : './components/lights.js (Defaults)') + `.`)
+
+        // --- Beging des if/else-Blocks zur Verarbeitung der Lichter ---
+        // Unterscheidung, ob Lichter aus Config oder Defaults verwendet werden
         if (this.#lightSettingsFromConfig.length > 0) {
-            console.log(`World${instanceIdLog} Erstelle Lichter basierend auf data-config.`)
+            
+            // Verarbeitung der Lichter aus der data-config
             for (const lightConfig of this.#lightSettingsFromConfig) {
                 let light = null
                 let helper = null
@@ -336,6 +351,36 @@ class World {
                         helper.name = `{$light.name}_Helper`
                         light.userData.helper = helper // Helper am Licht speichern
                         this.#scene.add(helper)
+
+                        // --- Schatteneinstellungen für DirectionalLight ---
+                        if (lightConfig.castShadows === true) {
+                            light.castShadow = true // Setze die THREE.js-Eigenschaft castShadow
+
+                            // Standard-Schattenparameter (diese können später auch konfigurierbar werden)
+                            // Map Size: Auflösung der Schattenkarte (höher = schärfer, aber langsamer)
+                            light.shadow.mapSize.set(1024, 1024)
+                            // Camera Frustum: Bereich, der Schatten werfen kann (muss groß genug sein, um alle Schatten-werfenden Objekte zu erfassen)
+                            light.shadow.camera.near = 0.5
+                            light.shadow.camera.far = 50 // Muss weiter sein als die weiteste Entfernung, in der Schatten sichtbar sein sollen
+                            light.shadow.camera.left = -10 // Beispielwerte: an Szene anzupassen
+                            light.shadow.camera.right = 10
+                            light.shadow.camera.top = 10
+                            light.shadow.camera.bottom = -10
+                            // Bias: Hilft bei Schatten-Artefakten
+                            light.shadow.bias = -0.001 // Kleiner negativer Wert hilft oft
+
+                            console.log(`[World${instanceIdLog}] DirectionalLight '${light.name}' für Schattenwurf konfiguriert.`)
+                        } else {
+                            light.castShadow = false
+                        }
+                        // Optional: Debug Helper für die Schattenkamera des DirectionalLight
+                        if (this.#isDebugMode && light.castShadow) {
+                            const shadowCameraHelper = new CameraHelper(light.shadow.camera)
+                            this.#scene.add(shadowCameraHelper)
+                            light.userData.shdowCasmeraHelper = shadowCameraHelper // Speichern für Dispose/GUI
+                            console.log(`[World${instanceIdLog}] DirectionalLight '${light.name}' ShadowCameraHelper hinzugefügt.`)
+                        }
+
                         break
                     case 'PointLight':
                         light = new PointLight(
@@ -356,7 +401,31 @@ class World {
                         helper.name = `${light.name}_Helper`
                         light.userData.helper = helper
                         this.#scene.add(helper)
+
+                        // Schatten
+                        if (lightConfig.castShadows === true) {
+                            light.castShadow = true
+
+                            // Standard-Schattenparameter
+                            light.shadow.mapSize = new Vector2(1024, 1024)
+                            light.shadow.camera.near = 0.1 // Oft näher als DirectionalLight
+                            light.shadow.camera.far = lightConfig.distance > 0 ? lightConfig.distance : 100 // Weite sollte entsprechend der Lichtentfernung oder groß genug sein
+                            light.shadow.bias = -0.001
+
+                            console.log(`[World${instanceIdLog}] PointLight '${light.name}' für Schattenwurf konfiguriert.`)
+                        } else {
+                            light.castShadow = false
+                        }
+                        // Optional: Debug Helper für die Schattenkamera des PointLight
+                        if (this.#isDebugMode && light.castShadow) {
+                            const shadowCameraHelper = new CameraHelper(light.shadow.camera)
+                            this.#scene.add(shadowCameraHelper)
+                            light.userData.shadowCameraHelper = shadowCameraHelper
+                            console.log(`[World${instanceIdLog}] PointLight '${light.name}' ShadowCameraHelper hinzugefügt.`)
+                        }
+
                         break
+                    // TODO: SpotLight Implementierung hinzufügen (ähnlich wie PointLight für Schatten)
                     default:
                         console.warn(`[World${instanceIdLog}] Unbekannter Licht-Typ in Konfiguration: ${lightConfig.type}`)
                         continue
@@ -370,7 +439,7 @@ class World {
                     }
                     console.log(`[World${instanceIdLog}] Licht '${light.name}' (${lightConfig.type})` + (helper ? ' mit Helper' : '') + ` zur Szene hinzugefügt.`)
                 }
-            }
+            }                
         } else {
             // Fallback: Keine lightSettings in der Config -> Standardlichter aus lights.js verwenden
             console.log(`[World${instanceIdLog}] Erstelle Standardlichter aus ./components/lights.js`)
@@ -393,6 +462,16 @@ class World {
                 }
                 // Weitere Helper für andere Standardlichttypen hier hinzufügen
 
+                // --- Explizit Schatten für Default-Lichter deaktivieren und Parameter setzen ---
+                if (light.isDirectionalLight || light.isPointLight) {
+                    light.castShadow = false // Explizit Schatten für Defaults deaktivieren
+                    // Stadard-Schattenparameter für Defaults (auch wenn castShadow false ist - schadet nicht)
+                    light.shadow.mapSize = new Vector2(1024, 1024) // ntze Zuweisung statt set
+                    light.shadow.camera.near = 0.1
+                    light.shadow.camera.fat = light.distance > 0 ? light.distance : 100
+                    light.shadow.bias = - 0.001
+                }
+
                 if (helper) {
                     helper.name = `${light.name}_Helper`
                     light.userData.helper = helper
@@ -404,7 +483,7 @@ class World {
                 if (light.target && light.target.parent !== this.#scene) {
                     this.#scene.add(light.target)
                 }
-                console.log(`[World${instanceIdLog}] Standardlicht '${light.name}' hinzugefügt.`)
+                console.log(`[World${instanceIdLog}] Standardlicht '${light.name}' hinzugefügt.` + (light.castShadow ? ' (wirft Schatten)' : ''))
             })
         }
     }
@@ -452,8 +531,15 @@ class World {
         renderer.toneMappingExposure = 1.0 // Default, kann später justiert werden
         renderer.outputColorSpace = SRGBColorSpace // Wichtiges Farbsetting
 
+        // Schattenwurf aktivieren
+        renderer.shadowMap.enabled = true
+        // Optional: Shadow Map Typ einstellen (Standard ist PCFShadowMap)
+        // PCFSoftShadowMap, PCFShadowMap, VSMShadowMap
+        // PCFSoftShadowMap bietet weichere Schatten, kann aber performanceintensiver sein
+        renderer.shadowMap.type = PCFSoftShadowMap
+
         // Größe wird durch Resizer gesetzt, nicht hier
-        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB`)
+        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB, ShadowMap Enabled: ${renderer.shadowMap.enabled}, Type: ${renderer.shadowMap.type.name}`)
         return renderer
     }
 
@@ -560,9 +646,9 @@ class World {
     // --- Methoden für Ladeanzeige ---
 
     #createLoadingIndicatorUI() {
-        console.log('Create loader UI now')
+        console.log(`[World${this.#instanceId}] Create loader UI`)
         this.#loadingIndicatorElement = document.createElement('div')
-        this.#loadingIndicatorElement.className = 'loading-indicator'
+        this.#loadingIndicatorElement.className = 'loading-indicator hidden'
        // this.#loadingIndicatorElement.style.display = 'none' // Initial versteckt
 
         this.#loadingPercentageElement = document.createElement('div')
@@ -579,6 +665,7 @@ class World {
         this.#loadingProgressBarElement = document.createElement('div')
         this.#loadingProgressBarElement.className = 'loading-progress-bar'
         this.#loadingProgressBarElement.style.width = '0%'
+        this.#loadingProgressBarElement.style.backgroundCOlor = '#eee'
 
         progressBarContainer.append(this.#loadingProgressBarElement)
         this.#loadingIndicatorElement.append(
@@ -587,6 +674,7 @@ class World {
             progressBarContainer)
         // Füge das Overlay zum Container DIESER Instanz hinzu
         this.#container.append(this.#loadingIndicatorElement)
+        console.log(`[World${this.#instanceId}] Ladeanzeige UI erstellt und zum Container hinzugefügt.`)
     }
 
     #setupLoadingManager(instanceIdLog) {
@@ -1138,9 +1226,9 @@ class World {
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})`
         console.log(`[World${instanceIdLog}] init gestartet mit ${sceneItemConfigs.length} Item(s).`)
 
-        // Array zum Sammeln der erfolgreich geladenen Objekte
-        const loadedSceneObjects = [] 
-        this.#clickableObjects =[] // Klickbare Objekte für diese Instanz zurücksetzen
+        // --- Array zum Sammeln der Objekte, die für Kamera-Framing relevant sind ---
+        const loadedSceneObjectsForFraming = [] 
+        this.#clickableObjects =[] // Instanzvariable für klickbare Objekte für diese Instanz zurücksetzen/initialisieren
 
         // Schleife über alle Objektkonfigurationen im Array
         for (const itemConfig of sceneItemConfigs) {
@@ -1171,7 +1259,9 @@ class World {
                     case 'plane': // Kann jetzt auch per Config kommen (optional)
                         // Erstelle eine Instanz der Plane-Klasse
                         loadedObject = new Plane(itemConfig) // Plane lädt keine Assets, braucht keinen Manager
-                        console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Plane'}' erstellt.`)
+                        // Namen konsistent setzen
+                        loadedObject.name = itemConfig.name || `ConfigPlane_${loadedSceneObjectsForFraming.length}`
+                        console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' (Plane) erstellt.`)
                         break
 
                     case 'gltf': 
@@ -1181,7 +1271,9 @@ class World {
                         }
                         // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
                         loadedObject = await loadGltf(itemConfig.assetUrl, this.#loadingManager)
-                        console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'GLTF'}' geladen.`)
+                        // Namen konsistent setzen
+                        loadedObject.name = itemConfig.name || `ConfigGLTF_${loadedSceneObjectsForFraming.length}`
+                        console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' (GLTF) geladen.`)
                         break
 
                     // Hier können später weitere Typen hinzugefügt werden
@@ -1202,8 +1294,9 @@ class World {
 
                 // Wenn ein Objekt erfolgreich geladen/erstellt wurde
                 if (loadedObject) {
-                    // Konfiguration anwenden
-                    if (itemConfig.name) loadedObject.name = itemConfig.name
+                    // Konfiguration anwenden (Position, Rotation, Skalierung etc.)
+                    // Namen wurden oben schon gesetzt
+                        // if (itemConfig.name) loadedObject.name = itemConfig.name
 
                     // Setze Position (falls in Config definiert)
                     if (itemConfig.position) {
@@ -1215,12 +1308,14 @@ class World {
                     }
 
                     // Rotation nur setzen, wenn nicht in der Komponente selbst gesetzt (wie bei Plane)
-                    if (itemConfig.rotation && itemConfig.type !== 'plane') {
+                    if (itemConfig.rotation) {
                         loadedObject.rotation.set(
                             itemConfig.rotation.x || 0, 
                             itemConfig.rotation.y || 0, 
                             itemConfig.rotation.z || 0
                         )
+                    } else if (itemConfig.type !== 'plane') {
+                        loadedObject.rotation.set(0, 0, 0)
                     }
 
                     // Setze Skalierung (falls in Config definiert
@@ -1229,16 +1324,46 @@ class World {
                     const scaleY = itemConfig.scale?.y ?? 1
                     const scaleZ = itemConfig.scale?.z ?? 1
                     loadedObject.scale.set(scaleX, scaleY, scaleZ)
+
+                    // --- Schatten: castShadow und receiveShadow aus COnfig auf Objekt und Kinder anwenden ---
+                    const castShadowConfig = itemConfig.castShadow !== undefined ? itemConfig.castShadow : true // Default: true
+                    const receiveShadowConfig = itemConfig.receiveShadow !== undefined ? itemConfig.receiveShadow : true // Default
+
+                    // Setze die Eigenschaften auf dem Haupt-Objekt
+                    loadedObject.castShadow = castShadowConfig
+                    loadedObject.receiveShadow = receiveShadowConfig
+
+                    // Durchlaufe alle Kind-Objekte (insbesondere Meshes bei GLTF)
+                    loadedObject.traverse(child => {
+                        if (child.isMesh) {
+                            child.castShadow = castShadowConfig
+                            child.receiveShadow = receiveShadowConfig
+                            // Wichtig: Wenn ein Material eine Textur hat, die Alüha-Kanäle verwendet, 
+                            // kann shadow.alphaToCoverage oder shadow.transparent = true nötig sein.
+                            // Depending on the material Setup. Für einfach Fälle reicht dies hier aber.
+                        }
+                    })
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' Schatten-Properties gesetzt: castShadow=${loadedObject.castShadow}, receiveShadow=${loadedObject.receiveShadow}`)
                     
                     // --- WICHTIG: Füge zur Instanz-Szene und Instanz-Clickables hinzu ---
                     this.#scene.add(loadedObject)
-                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zur Szene hinzugefügt.`)
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' zur Szene hinzugefügt.`)
+
+                    // --- Füge zur Liste der Objekte für Framing hinzu (nur relevante) ---
+                    // Prüfe, ob das Objekt selbst ein Mesh ist oder Kinder hat, die Meshes sind 
+                    if (loadedObject.isMesh || loadedObject.children.some(child => child.isMesh)) {
+                        loadedSceneObjectsForFraming.push(loadedObject)
+                        console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' zu loadedSceneObjectsForFraming hinzugefügt.`)
+                    } else {
+                        // Füge zur Liste der Objekte hinzu (auch wenn sie nicht für Framing relevant sind, z.B. leere Gruppen)
+                        loadedSceneObjectsForFraming.push(loadedObject)
+                        console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' (Typ ${loadedObject.type}) wurde hinzugefügt, hat aber keine Geometry für Framing.`)
+                    }
 
                     // Optional: Füge nur das konfigurierte Hauptobjekt zur Liste der klickbaren Objekte hinzu
                     // (Vorbereitung für spätere Interaktion)
-                    loadedSceneObjects.push(loadedObject)
                     this.#clickableObjects.push(loadedObject)
-                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name || itemConfig.type}' zu loadedSceneObjects/clickableObjects hinzugefügt.`)
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' zu clickableObjects hinzugefügt.`)
                 }
             } catch (error) {
                 console.error(`[World${instanceIdLog}] Fehler beim Verarbeiten des Config-Items: `, itemConfig, error)
@@ -1247,12 +1372,42 @@ class World {
                     this.#loadingPercentageElement.textContent = `Error initializing item: ${itemConfig.name || itemConfig.type}. Check Console.`
                     this.#loadingProgressBarElement.style.width = '100%'
                     this.#loadingProgressBarElement.style.backgroundColor = 'red'
-                    this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
+                    // Ging früher nicht, noch nichtgetestet: 
+                        this.#loadingIndicatorElement.classList.remove('hidden')
+                        this.#loadingIndicatorElement.classList.add('visible')
+                    // Ging früher: 
+                        // this.#loadingIndicatorElement.style.display = 'flex' // Sicherstellen, dass es sichtbar ist
                 }
                 // throw error // Fehler weiterwerfen, wird in main.js gefangen
             }
         }
-        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen.`)
+
+        // --- Fallback Bodenplatte (falls keine Plane in Config definiert wurde) ---
+        // Prüfe, ob unter den geladenen Objekten eine Plane ist
+        const hasConfigPlane = loadedSceneObjectsForFraming.some(obj => obj.isMesh && obj.geometry.type === 'PlaneGeometry')
+
+        if (!hasConfigPlane) {
+            console.log(`[World${instanceIdLog}] Keine Plane in data-config gefunden, die Geometrie enthält. Füge Standard-Bodenplatte hinzu.`)
+            const defaultPlane = new Plane()
+            this.#scene.add(defaultPlane)
+            // Füge die Standard-Plane hinzu
+            loadedSceneObjectsForFraming.push(defaultPlane)
+
+            // receiveShadow für die Standard-Plane setzen
+            defaultPlane.receiveShadow = true
+            defaultPlane.castShadow = false
+            console.log(`[World${instanceIdLog}] Standard-Bodenplatte '${defaultPlane.name}' mit receiveShadow=true hinzugefügt und zu loadedSceneObjectsForFraming hinzugefügt.`)
+
+            // Standard Plane soll nicht klickbar sein, daher nicht zu #clickableObjects hinzufügen
+
+        } else {
+            console.log(`[WOrld${instanceIdLog}] Eine Plane mit Geometrie wurde in data-config gefunden. Füge keine Standard-Bodenplatte hinzu.`)
+
+            // HINWEIS: Stelle sicher, dass die in der Konfig geladene Plane receiveShadow auf true hat.
+            // Das wird bereits in der obigen Schleife behandelt (Standard true).
+        }
+        
+        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen. ${loadedSceneObjectsForFraming.length} Objekte für Framing gefunden.`)
 
         // --- Kamera-Framing ---
         // Bedingungen für automatisches Framing: 
@@ -1260,21 +1415,29 @@ class World {
         // - Entweder disableFramingIfInitialSet ist false ODER
         // - initialPosition oder initialLookAt sind nicht beide gesetzt 
         //   (d.h. #cameraSettings.disableFramingIfInitialSet wurde im Config nstructor false)
-        const performFraming = loadedSceneObjects.length > 0 &&
+        const performFraming = loadedSceneObjectsForFraming.length > 0 &&
                                 (!this.#cameraSettings.disableFramingIfInitialSet || 
                                  !this.#cameraSettings.initialPosition || 
                                  !this.#cameraSettings.initialLookAt)
 
         if (performFraming) {
-            console.log(`[World${instanceIdLog}] Automatische Kamera-Framing wird durchgeführt.`)
+            console.log(`[World${instanceIdLog}] Automatische Kamera-Framing wird durchgeführt anhand von ${loadedSceneObjects.length} Objekten.`)
             const overallBoundingBox = new Box3()
 
-            loadedSceneObjects.forEach(object => {
+            loadedSceneObjectsForFraming.forEach(object => {
                 // Stelle sicher, dass die Matrix des Objekts aktuell ist
                 object.updateMatrixWorld(true)
+
                 // Erzeuge eine Box3 für das aktuelle Objekt und erweitere die Gesamtbox
                 const objectBox = new Box3().setFromObject(object)
-                overallBoundingBox.union(objectBox)
+                // Wir haben bereits oben beim Hinzufügen geprüft, ob das Objekt fürs Framing geeignet ist, 
+                // aber eine zusätzliche Prüfung auf leere BBox kann nicht schaden.
+                if (!objectBox.isEmpty()) {
+                    overallBoundingBox.union(objectBox)
+                } else {
+                    console.warn(`[World${instanceIdLog}] Objekt '${object.name || object.uuid}' hat eine leere BoundingBox während des Framing-Passes und wird ignoriert.`)
+                }
+                
             })
 
             if (!overallBoundingBox.isEmpty()) {
@@ -1324,7 +1487,7 @@ class World {
                 }
 
             } else {
-                console.warn(`[World${instanceIdLog}] Bounding Box für Kamera-Framing ist leer. Überspringe Anpassung`)
+                console.warn(`[World${instanceIdLog}] Bounding Box für Kamera-Framing ist leer (nach Prüfung relevanter Objekte). Überspringe Anpassung`)
                 // Standard-Kameraposition und -ziel, falls keine Objekte geladen wurden
                 if (!this.#cameraSettings.initialPosition && !this.#cameraSettings.initialLookAt) {
                     this.#controls.target.set(0, 0, 0)
@@ -1334,7 +1497,7 @@ class World {
                 }
                 
             }
-        } else if (loadedSceneObjects.length > 0 && this.#cameraSettings.disableFramingIfInitialSet){
+        } else if (loadedSceneObjectsForFraming.length > 0 && this.#cameraSettings.disableFramingIfInitialSet){
             console.log(`[World${instanceIdLog}] Automatisches Kamera-Framing übersprungen aufgrund von initialPosition/initialLookAt und disableFramingIfInitialSet=true.`)
             // Sicherstellen, dass die Kamera auf initialLookAt blickt, falls es gesetzt wurde.
             // Die Position wurde bereits in #createCamera gesetzt.
