@@ -1,4 +1,4 @@
-// src/World/World.js 00:24
+// src/World/World.js 22:00
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -353,7 +353,7 @@ class World {
                         this.#scene.add(helper)
 
                         // --- Schatteneinstellungen für DirectionalLight ---
-                        if (lightConfig.castShadows === true) {
+                        if (lightConfig.castShadow === true) {
                             light.castShadow = true // Setze die THREE.js-Eigenschaft castShadow
 
                             // Standard-Schattenparameter (diese können später auch konfigurierbar werden)
@@ -539,7 +539,7 @@ class World {
         renderer.shadowMap.type = PCFSoftShadowMap
 
         // Größe wird durch Resizer gesetzt, nicht hier
-        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB, ShadowMap Enabled: ${renderer.shadowMap.enabled}, Type: ${renderer.shadowMap.type.name}`)
+        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB, ShadowMap Enabled: ${renderer.shadowMap.enabled}, Type: ${renderer.shadowMap.type}`)
         return renderer
     }
 
@@ -786,7 +786,7 @@ class World {
 
             // --- Hintergrundsteuerung ---
             const backgroundFolder = this.#gui.addFolder('Hintergrund')
-            // backgroundFolder.open() 
+            backgroundFolder.close() 
 
             // Temporäres Objekt für den Farb-Picker, da lil-gui direkt auf Objekteigenschaften zugreift
             const bgColorProxy = { color: `#${this.#solidBackgroundColor.getHexString()}` }
