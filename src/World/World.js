@@ -544,6 +544,14 @@ class World {
     }
 
     async #setupEnvironmentMap(instanceIdLog){
+        if (this.guiEnvMapStatusController) { // Check ob GUI schon da ist
+            if (!this.guiUseEnvMapBgController) {
+                this.guiUseEnvMapBgController.disable(true)
+            } else {
+                this.guiEnvMapStatusController.setValue('Lädt...')
+            }
+        }
+
         if (!this.#environmentMapUrl) {
             console.log(`[World${instanceIdLog}] Keine Environment Map URL konfiguriert? -> Überspringe Setup`)
             this.#useEnvMapAsBackground = false
@@ -585,13 +593,33 @@ class World {
 
             this.#loadingManager.itemEnd(loadingManagerKey)
 
+            if (this.guiEnvMapStatusController) {
+                this.guiEnvMapStatusController.setValue('Geladen & Verarbeitet')
+            }
+            // Stelle sicher, dass der Switch für "EnvMap als Hintergrund" aktiviert ist, falls er vorher deaktiviert war
+            if (this.guiUseEnvMapBgController) {
+                this.guiUseEnvMapBgController.disable(false)
+            }
+
         } catch (error) {
             console.error(`[World${instanceIdLog}] Fehler beim Laden/Prozessieren der EnvMap: ${this.#environmentMapUrl}`, error);
             this.#loadingManager.itemError(loadingManagerKey);
             this.#environmentMapProcessed = null; // Sicherstellen, dass sie als nicht verfügbar markiert ist
             this.#useEnvMapAsBackground = false; // Bei Fehler keine EnvMap als BG
             this.#updateBackgroundAppearance(instanceIdLog); // Setze Fallback (Solid Color)
+
+            if (this.guiEnvMapStatusController) {
+                this.guiEnvMapStatusController.setValue('Fehler!')
+            }
+            // Der Switch sollte auch hier wieder deaktiviert werden, da die Map nicht verfügbar ist
+            if (this.guiUseEnvMapBgController) {
+                this.guiUseEnvMapBgController.disable(true)
+            }
         }
+        // Nachdem die Map geladen (oder fehlgeschlagen) ist und useEnvMapAsBackground
+        // möglicherweise geändert wurde, muss #updateBackgroundAppearance aufgerufen werden, 
+        // was auch den ColorPicker für den Soilid-Background korrekt (de)aktiviert
+        this.#updateBackgroundAppearance(instanceIdLog)
     }
 
     #applyEnvironmentMapSettings(instanceIdLogPassed) { // instanceIdLogPassed, um Konflikt zu vermeiden, falls nicht immer von von einer Methode mit instanceIDLog aufgerufen
@@ -860,10 +888,12 @@ class World {
                     this.guiUseEnvMapBgController.disable(!isEnvMapReady)
                 }
 
-                if (!isEnvMapReady) {
-                    envMapFolder.add({ status: 'Map lädt/fehlt...' }, 'status')
-                        .name('Status').disable()
-                }
+                // if (!isEnvMapReady) {
+                //     envMapFolder.add({ status: 'Map lädt/fehlt...' }, 'status')
+                //         .name('Status').disable()
+                // }
+                this.guiEnvMapStatusController = envMapFolder.add({ status: 'Initialisiere...' }, 'status')
+                    .name('Status').disable()
                 // Rufe dies auf, um sicherstellen, dass der ColorPicker und Switch
                 // den korrekten initialen Zustand basierend auf der Config haben. 
                 this.#updateBackgroundAppearance(instanceIdLog)
