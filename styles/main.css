@@ -88,3 +88,20 @@ canvas {
     border-radius: 4px;
     transition: width 0.2s ease-out; /* Sanfter Übergang bei Fortschritt */
 }
+
+.lil-gui.root > .children > .lil-gui > .children > * {
+    padding-left: 0.75rem;
+}
+
+.lil-gui.root > .title {
+    font-size: 1rem;
+    height: auto;
+}
+
+.lil-gui.root > .children > .lil-gui > .title {
+    margin-top: 0.5rem;
+    border: 0 solid var(--widget-color);
+    border-width: 1px 0;
+    background-color: rgb(34, 26, 89);
+    transition: border-color 300ms;
+}

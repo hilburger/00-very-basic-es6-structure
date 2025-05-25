@@ -1,4 +1,4 @@
-// src/World/World.js 22:00
+// src/World/World.js 23:16
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -12,7 +12,7 @@ import {
     SRGBColorSpace, // Korrekter Output Color Space
     EquirectangularReflectionMapping, // Mapping-Typ für HDRIs
     PMREMGenerator, // Für die Verarbeitung von HRDIa zu Cube Maps
-    PCFSoftShadowMap, // ShadowMap-Types - Beispiel für einen weichen Schatten-Typ
+    PCFSoftShadowMap, PCFShadowMap, BasicShadowMap // ShadowMap-Types - Beispiel für einen weichen Schatten-Typ
 } from 'three' // AxesHelper und Color sind nur für Debugging
 
 // EventBus Singleton
@@ -82,6 +82,8 @@ class World {
     #environmentMapIntensity = 1.0 // Default Intensity
     #environmentMapRotationY = 0.0 // Default roration in Radiant
     #pmremGenerator = null // PMREMGenereator Instanz
+    #rendererShadowMapTypeFromConfig
+    #rendererShadowMapEnabledFromConfig
 
     #useEnvMapAsBackground = true
     #solidBackgroundColor = new Color(0x222233)
@@ -92,6 +94,11 @@ class World {
         this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
+
+        // Renderer-Config aus mainConfig extrahieren
+        const rendererConf = mainConfig?.rendererConfig?.shadowMap || {}
+        this.#rendererShadowMapEnabledFromConfig = rendererConf.enabled // Könnte true, flse oder undefined sein
+        this.#rendererShadowMapTypeFromConfig = rendererConf.type // Könnte eine Zahl oder undefined sein
 
         const cameraConf = mainConfig?.cameraConfig || {}
         // Camera-spezifische Einstellungen aus mainConfig extrahieren (oder Defaults verwenden)
@@ -377,7 +384,7 @@ class World {
                         if (this.#isDebugMode && light.castShadow) {
                             const shadowCameraHelper = new CameraHelper(light.shadow.camera)
                             this.#scene.add(shadowCameraHelper)
-                            light.userData.shdowCasmeraHelper = shadowCameraHelper // Speichern für Dispose/GUI
+                            light.userData.shadowCameraHelper = shadowCameraHelper // Speichern für Dispose/GUI
                             console.log(`[World${instanceIdLog}] DirectionalLight '${light.name}' ShadowCameraHelper hinzugefügt.`)
                         }
 
@@ -403,7 +410,7 @@ class World {
                         this.#scene.add(helper)
 
                         // Schatten
-                        if (lightConfig.castShadows === true) {
+                        if (lightConfig.castShadow === true) {
                             light.castShadow = true
 
                             // Standard-Schattenparameter
@@ -527,16 +534,38 @@ class World {
             // Optional: Wenn Performance auf Mobilgeräten wichtig ist
             // powerPreferences: 'high-performance'
         })
+        
+        // *** NEUER, VEREINFACHTER LOG ***
+        console.log('[World' + this.#instanceId + ' - #createRenderer] Renderer direkt nach Erstellung:')
+        console.log(renderer)
+        console.log('[World' + this.#instanceId + ' - #createRenderer] renderer.id direkt nach Erstellung: ' + renderer.id)
+        // *** ENDE NEUER, VEREINFACHTER LOG ***
+
         renderer.toneMapping = ACESFilmicToneMapping // Empfohlenes Tone Mapping
         renderer.toneMappingExposure = 1.0 // Default, kann später justiert werden
         renderer.outputColorSpace = SRGBColorSpace // Wichtiges Farbsetting
 
-        // Schattenwurf aktivieren
-        renderer.shadowMap.enabled = true
-        // Optional: Shadow Map Typ einstellen (Standard ist PCFShadowMap)
-        // PCFSoftShadowMap, PCFShadowMap, VSMShadowMap
-        // PCFSoftShadowMap bietet weichere Schatten, kann aber performanceintensiver sein
-        renderer.shadowMap.type = PCFSoftShadowMap
+        // Schattenwurf aktivieren, Werte kommen, wenn da aus Config oder Default
+        if (this.#rendererShadowMapEnabledFromConfig !== undefined) {
+            renderer.shadowMap.enabled = this.#rendererShadowMapEnabledFromConfig
+        } else {
+            renderer.shadowMap.enabled = true
+        }
+        
+        // Optional: Shadow Map Typ einstellen (auch aus Config oder Default)
+        if (this.#rendererShadowMapTypeFromConfig !== undefined) {
+            // Stelle sicher, dass der Wert eine gültige Zahl ist (Three.js erwartet Zahlen für Typen)
+            const typeValue = Number(this.#rendererShadowMapTypeFromConfig)
+            if (!isNaN(typeValue) && typeValue >= 0 && typeValue <= 2) { // Gültigkeitsbereich für Standardtypen, hier 2 statt 3 weil nicht alle genutzt werden
+                renderer.shadowMap.type = typeValue
+            } else {
+                console.warn(`[World${this.#instanceId}] Üngültiger shadowMap.type ('${this.#rendererShadowMapTypeFromConfig}) in Config. Verwende Default.`)
+                renderer.shadowMap.type = PCFSoftShadowMap // Fallback auf Default
+            }
+        } else {
+            renderer.shadowMap.type = PCFSoftShadowMap // STandard-Type, falls nichts in Config definiert wurde
+        }
+        
 
         // Größe wird durch Resizer gesetzt, nicht hier
         console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB, ShadowMap Enabled: ${renderer.shadowMap.enabled}, Type: ${renderer.shadowMap.type}`)
@@ -588,18 +617,24 @@ class World {
 
             this.#applyEnvironmentMapSettings(instanceIdLog) // Initiale Einstellungen anwenden
 
-            // Hintergrund basierend auf User-Wahl setzen
-            this.#updateBackgroundAppearance(instanceIdLog)
-
-            this.#loadingManager.itemEnd(loadingManagerKey)
-
+            // GUI-Status und Controller Aktivieren
             if (this.guiEnvMapStatusController) {
                 this.guiEnvMapStatusController.setValue('Geladen & Verarbeitet')
             }
-            // Stelle sicher, dass der Switch für "EnvMap als Hintergrund" aktiviert ist, falls er vorher deaktiviert war
-            if (this.guiUseEnvMapBgController) {
-                this.guiUseEnvMapBgController.disable(false)
+            if (this.guiIblIntensityController) {
+                this.guiIblIntensityController.enable()
             }
+            if (this.guiIblRotationController) {
+                this.guiIblRotationController.enable()
+            }
+            // Stelle sicher, dass der Switch für die "EnvMap als Hintergrund" aktiviert ist
+            if (this.guiUseEnvMapBgController) {
+                this.guiUseEnvMapBgController.enable()
+            }
+
+            // Hintergrund basierend auf User-Wahl setzen
+            this.#updateBackgroundAppearance(instanceIdLog) // Wichtig, um ggf. SolidColorPicker zu deaktivieren
+            this.#loadingManager.itemEnd(loadingManagerKey)
 
         } catch (error) {
             console.error(`[World${instanceIdLog}] Fehler beim Laden/Prozessieren der EnvMap: ${this.#environmentMapUrl}`, error);
@@ -608,12 +643,19 @@ class World {
             this.#useEnvMapAsBackground = false; // Bei Fehler keine EnvMap als BG
             this.#updateBackgroundAppearance(instanceIdLog); // Setze Fallback (Solid Color)
 
+            // Stelle sicher, dass die Controller hier deaktiviert bleiben oder werden, falls ein Fehler auftritt
             if (this.guiEnvMapStatusController) {
                 this.guiEnvMapStatusController.setValue('Fehler!')
             }
             // Der Switch sollte auch hier wieder deaktiviert werden, da die Map nicht verfügbar ist
             if (this.guiUseEnvMapBgController) {
                 this.guiUseEnvMapBgController.disable(true)
+            }
+            if (this.guiIblIntensityController) {
+                this.guiIblIntensityController.disable()
+            }
+            if (this.guiIblRotationController) {
+                this.guiIblRotationController.disable()
             }
         }
         // Nachdem die Map geladen (oder fehlgeschlagen) ist und useEnvMapAsBackground
@@ -811,10 +853,54 @@ class World {
             const folderName = `Viewer ${this.#instanceId} (${this.#container.id})`
             // Erstelle Ordner für diese Instanz
             this.#gui = sharedGui.addFolder(folderName)
+            //this.#gui.close()
+
+            // --- Renderer Settings ---
+            const rendererFolder = this.#gui.addFolder('Renderer Settings')
+            // Switch für shadowMap.enabled auch hier einfügen
+            rendererFolder.add(this.#renderer.shadowMap, 'enabled')
+                .name('Schatten Global An/Aus')
+                .onChange(value => {
+                    const instanceIdLog = ' Instance ' + this.#instanceId + ' (' + this.#container.id + ')'
+                    // VEREINFACHTER Log:
+                    console.log('[World' + instanceIdLog + '] GUI toggled shadowMap.enabled to: ' + value + '.')
+                    console.log('[World' + instanceIdLog + '] this.#renderer Objekt:')
+                    console.log(this.#renderer)
+                    console.log('[World' + instanceIdLog + '] this.#renderer.id: ' + (this.#renderer ? this.#renderer.id : 'renderer_is_undefined'))
+                })
+            rendererFolder.close()
+
+            // Proxy-Objekt für den GUI-Controller des ShadowMap-Typs
+            const shadowRenderSettings = {
+                type: this.#renderer.shadowMap.type 
+            }
+
+            // Option für das Dropdown-Menü (Anzeigetext: THREE.Konstante)
+            const shadowTypeOptions = {
+                'Basic': BasicShadowMap,    // Wert 0
+                'PCF': PCFShadowMap,        // Wert 1
+                'PCF (weich)': PCFSoftShadowMap //, Wert 2
+                // 'VSM': VSMShadowMap      // Wert ist 3 (inaktiv, weil heute noch experimentell)
+            }
+
+            rendererFolder.add(shadowRenderSettings, 'type', shadowTypeOptions) 
+                .name('Schatten-Typ')
+                .onChange(value => {
+                    // lil-gui übergibt den numerischen Wert der ausgewählten Option
+                    this.#renderer.shadowMap.type = Number(value)
+                    // Wichtig: Bei einem Wechsel des ShadowMap-Typs, insbesondere zu/von VSMShadowMap,
+                    // kann es notwendig sein, die Szene neu zu rendern oder sogar Materialien zu aktualisieren,
+                    // damit die Änderung korrekt dargestellt wird. Three.js versucht, dies oft dynamisch zu handhaben.
+                    // Ein einfaches this.#renderer.render(this.#scene, this.#camera) könnte hier nach Bedarf ausgelöst werden,
+                    // aber da wir einen Loop haben, sollte es beim nächsten Frame wirksam werden.
+                    console.log(`[World${instanceIdLog}] ShadowMap Typ geändert zu: ${value}`)
+                })
 
             // --- Hintergrundsteuerung ---
             const backgroundFolder = this.#gui.addFolder('Hintergrund')
-            backgroundFolder.close() 
+                // backgroundFolder.close() 
+                // backgroundFolder.hide()
+            console.log('--- BG-FOLDER ---', backgroundFolder)
 
             // Temporäres Objekt für den Farb-Picker, da lil-gui direkt auf Objekteigenschaften zugreift
             const bgColorProxy = { color: `#${this.#solidBackgroundColor.getHexString()}` }
@@ -840,7 +926,7 @@ class World {
             // --- Environment Map Ordner und Steuerelemente ---
             if (this.#environmentMapUrl) {
                 const envMapFolder = this.#gui.addFolder('Umgebung (IBL & Hintergrund)')
-                // envMapFolder.open()
+                envMapFolder.close()
 
                 // Proxyobjekt für Environment Map GUI-Steuerung
                 const envMapGuiProxy = {
@@ -850,7 +936,7 @@ class World {
                 }
 
                 //IBL-Regler (Intensität & Rotation für scene-environment)
-                const intensityController = envMapFolder.add(envMapGuiProxy, 'intensity', 0, 5, 0.01) // Verwende Proxy
+                this.guiIblIntensityController = envMapFolder.add(envMapGuiProxy, 'intensity', 0, 5, 0.01)
                     .name('IBL Intensität')
                     .onChange((value) => {
                         this.#environmentMapIntensity = value // Synchronisiere mit peivatem Feld
@@ -859,7 +945,7 @@ class World {
                         }
                     })
 
-                const rotationController = envMapFolder.add(envMapGuiProxy, 'rotationY', 0, Math.PI * 2, 0.01) // Verwende Proxy
+                this.guiIblRotationController = envMapFolder.add(envMapGuiProxy, 'rotationY', 0, Math.PI * 2, 0.01)
                     .name('IBL Rotation Y')
                     .onChange((value) => {
                         this.#environmentMapRotationY = value // Synchronisiere mit privatem Feld
@@ -882,8 +968,8 @@ class World {
                 // aber hier einmalig für die Deaktivierung bei nicht geladener Map)
                 const isEnvMapReady = !!this.#environmentMapProcessed
 
-                intensityController.disable(!isEnvMapReady) // Deaktiviere, wenn Map nicht bereit
-                rotationController.disable(!isEnvMapReady) // Deaktiviere, wenn Map nicht bereit
+                this.guiIblIntensityController.disable(!isEnvMapReady) // Deaktiviere, wenn Map nicht bereit
+                this.guiIblRotationController.disable(!isEnvMapReady) // Deaktiviere, wenn Map nicht bereit
                 if (this.guiUseEnvMapBgController) {
                     this.guiUseEnvMapBgController.disable(!isEnvMapReady)
                 }
@@ -944,32 +1030,31 @@ class World {
 
             // --- Kamera-Regler ---
             const cameraFolder = this.#gui.addFolder('Kamera') // Füge den Kamera-Ordner zu this.#gui hinzu
+            cameraFolder.close()
 
             // Position
             const camPosFolder = cameraFolder.addFolder('Position')
             camPosFolder.add(this.#camera.position, 'x', -50, 50, 0.1).name('X').listen()
             camPosFolder.add(this.#camera.position, 'y', -50, 50, 0.1).name('Y').listen()
             camPosFolder.add(this.#camera.position, 'z', -50, 50, 0.1).name('Z').listen()
-            // camPosFolder.open() // Optional: Diesen Unterordner öffnen
+            camPosFolder.close()
 
             // Target / LookAt
             const camTargetFolder = cameraFolder.addFolder('Ziel (LookAt)')
             camTargetFolder.add(this.#controls.target, 'x', -50, 50, 0.1).name('X').listen()
             camTargetFolder.add(this.#controls.target, 'y', -50, 50, 0.1).name('Y').listen()
             camTargetFolder.add(this.#controls.target, 'z', -50, 50, 0.1).name('Z').listen()
-            // camTargetFolder.open()
+            camTargetFolder.close()
 
             // FOV
             cameraFolder.add(this.#camera, 'fov', 1, 179, 1).name('FOV (Grad)')
             .onChange(() => {
                 this.#camera.updateProjectionMatrix()
             }).listen()
-            // cameraFolder.open() // Optional: Den Kamera-Hauptordner öffnen
 
             // --- Licht-Regler ---
             if (this.#lights.length > 0) {
                 const lightsFolder = this.#gui.addFolder('Lichter')
-                // lightsFolder.open() // Optional
 
                 this.#lights.forEach((light, index) => {
                     // Verwende einen eindeutigen Namen für den Ordner, falls light.name nicht gesetzt ist
@@ -1009,7 +1094,7 @@ class World {
                         // posFolder.open()
                     }
 
-                    // --- SPezifische EIgenschaften für DIrectionalLight ---
+                    // --- Spezifische EIgenschaften für DIrectionalLight ---
                     if (light.isDirectionalLight) {
                         // Das Target-Objekt eines DIrectionalLight ist standardmäßig bei (0,0,0) relativ zur Lichtquelle
                         // Wenn wir das Target bewegen wollen, bewegen wir das light.target Objekt.
@@ -1039,13 +1124,146 @@ class World {
                         // PointLightHelper Größe wird nicht direkt durch distance/decay beeinflusst, sondern durch den 2. Parameter im Constructur
                         // Aber man könnte den Helper neu erstellen oder seine sphere.scale anpassen, wenn man das möchte
                     }
-                    // individualLightFolder.open()
+
+                    // Schattenparameter
+                    // Prüfe, ob das Licht überhaupt Schatten werfen kann
+                    if (light.isDirectionalLight || light.isPointLight || light.isSpotLight) {
+                        const shadowFolder = individualLightFolder.addFolder('Schatten-Parameter')
+
+                        // 1. castShadow für jedes Licht einzeln
+                        shadowFolder.add(light, 'castShadow').name('Wirft Schatten')
+                            .onChange(casts => {
+                                //Sichtbarkeit des ShadowCameraHelpers anpassen, falls vorhanden
+                                if (light.userData.shadowCameraHelper) {
+                                    light.userData.shadowCameraHelper.visible = casts
+                                    if (casts) { // Nur updaten, wenn er sichtbar wird und vorher unsichtbar war
+                                        light.userData.shadowCameraHelper.update()
+                                    }
+                                }
+                                // Hinweis: Materialien in der Szene könnten ein Update benötigen, 
+                                // um auf die Änderung von castShadow zu reagieren (Three.js macht das oft automatisch).
+                                // Bei Problemen könnte man HIER einen scene.traverse und material.needsUpdate = true einfügen.
+                            })
+                        
+                        // Proxy-Objekt für mapSize, da wir width/height synchron halten wollen
+                        const mapSizeProxy = {
+                            size: light.shadow.mapSize.width // Annahme: width und height sind initial gleich
+                        }
+                        const mapSizeOptions = { 512: 512, 1024: 1024, 2048: 2048, 4096: 4096, 8192: 8192 }
+
+                        // 2. mapSize (height und width synchronisiert)
+                        shadowFolder.add(mapSizeProxy, 'size', mapSizeOptions)
+                            .name('ShadowMap Größe')
+                            .onChange(value => {
+                                const newSize = Number(value)
+                                light.shadow.mapSize.set(newSize, newSize)
+
+                                // SEHR WICHTIG für mapSize-Änderungen: 
+                                // Die alte ShadowMap muss freigegeben und auf null gesetzt werden, 
+                                // damit Three.js eine neue mit der korrekten Größe erstellt. 
+                                if (light.shadow.map) {
+                                    light.shadow.map.dispose()
+                                    light.shadow.map = null
+                                }
+                                // light.shadow.needsUpdate = true // ist für mapSize-Änderungen oft nicht ausreichend
+
+                                if (light.userData.shadowCameraHelper) {
+                                    light.userData.shadowCameraHelper.update() 
+                                }
+                            })
+
+                        // 3. Parameter der light.shadow.camera
+                        const shadowCam = light.shadow.camera
+                        const shadowCameraParamsFolder = shadowFolder.addFolder('Schattenkamera Frustum')
+                        // shadowCameraParamsFolder.open()
+
+                        shadowCameraParamsFolder.add(shadowCam, 'near', 0.01, 200, 0.1)
+                            .name('Near')
+                            .listen()
+                            .onChange(() => {
+                                shadowCam.updateProjectionMatrix()
+                                if (light.userData.shadowCameraHelper) light.userData.shadowCameraHelper.update()
+                            })
+                        shadowCameraParamsFolder.add(shadowCam, 'far', 0.1, 1000, 0.1)
+                            .name('Far')
+                            .listen()
+                            .onChange(() => {
+                                shadowCam.updateProjectionMatrix()
+                                if (light.userData.shadowCameraHelper) light.userData.shadowCameraHelper.update()
+                            })
+
+                        // Diese Parameter sind hauptsächlich für OrthographicCamera (DirectionalLight, SpotLight)
+                        if (shadowCam.isOrthographicCamera) {
+                            shadowCameraParamsFolder.add(shadowCam, 'left', -100, 100, 0.1)
+                            .name('Left')
+                            .listen()
+                            .onChange(() => {
+                                shadowCam.updateProjectionMatrix()
+                                if (light.userData.shadowCameraHelper) light.userData.shadowCameraHelper.update()
+                            })
+                            shadowCameraParamsFolder.add(shadowCam, 'right', -100, 100, 0.1)
+                            .name('Right')
+                            .listen()
+                            .onChange(() => {
+                                shadowCam.updateProjectionMatrix()
+                                if (light.userData.shadowCameraHelper) light.userData.shadowCameraHelper.update()
+                            })
+                            shadowCameraParamsFolder.add(shadowCam, 'top', -100, 100, 0.1)
+                            .name('Top')
+                            .listen()
+                            .onChange(() => {
+                                shadowCam.updateProjectionMatrix()
+                                if (light.userData.shadowCameraHelper) light.userData.shadowCameraHelper.update()
+                            })
+                            shadowCameraParamsFolder.add(shadowCam, 'bottom', -100, 100, 0.1)
+                            .name('Bottom')
+                            .listen()
+                            .onChange(() => {
+                                shadowCam.updateProjectionMatrix()
+                                if (light.userData.shadowCameraHelper) light.userData.shadowCameraHelper.update()
+                            })
+                        }
+
+                        // Für PoinLight ist die shadow.camera eine PerspectiveCamera. 
+                        // Ihre fov und aspectRatio werden autom. von Thre.js verwaltet. 
+                        // Man könnte light.shadow.fov und light.shadow.aspect hinzufügen, falls benötigt.
+
+                        // 4. shadow.radius (für Weichzeichnung der Schattenkante)
+                        // Hat hauptsächlich mit PCFSoftShadowMap oder VSMShadowMap sichtbare Auswirkungen 
+                        if (this.#renderer.shadowMap.type === PCFSoftShadowMap || this.#renderer.shadowMap.type === VSMShadowMap) {
+                            shadowFolder.add(light.shadow, 'radius', 0, 32, 0.1)
+                                .name('Radius (Softness)')
+                                .listen()
+                                // .onChange(() => {
+                                //     Optional: light.shadow.needsUpdate = true // Selten nötig für Radius allein
+                                //   })
+                        } else {
+                            // Hinweis anzeigen, dass Radius bei aktuellem ShadowMap-Type keine Wirkung hat
+                            const radiusNote = { note: 'Nur für PCFSoft/VSM' }
+                            shadowFolder.add(radiusNote, 'note').name('Radius').disable()
+                        }
+
+                        // 5. shadow.bias (sehr wichtig zur Vermeidung von Shadow Acne und Peter Panning)
+                        shadowFolder.add(light.shadow, 'bias', -0.01, 0.01, 0.0001)
+                            .name('Bias')
+                            .listen()
+
+                        // 6. Sichtbarkeit des ShadowCameraHelpers (falls vorhanden)
+                        if (light.userData.shadowCameraHelper) {
+                            shadowFolder.add(light.userData.shadowCameraHelper, 'visible')
+                                .name('ShadowCam Helper')
+                        }
+                    }
+
+                    individualLightFolder.close()
                 })
+                // lightsFolder.close()
             }
 
             // --- Export Button ---
             const exportSettings = {
                 exportFullConfig: () => {
+
                     // 1. Kamera-Konfiguration sammeln
                     const currentCameraConfig = {
                         initialPosition: {
@@ -1073,7 +1291,8 @@ class World {
                             type: light.constructor.name, // Gibt z.B. "AmbientLight", "DirectionalLight"
                             name: light.name || `${light.constructor.name}_Exported_${index}`,
                             color: `#${light.color.getHexString()}`, 
-                            intensity: parseFloat(light.intensity.toFixed(2)) // Mit 2 Nachkommastellen
+                            intensity: parseFloat(light.intensity.toFixed(2)), // Mit 2 Nachkommastellen
+                            castShadow: light.castShadow
                         }
                         
                         // Position hinzufügen, falls vorhanden (nicht für AmbientLight)
@@ -1119,13 +1338,22 @@ class World {
                         color: `#${this.#solidBackgroundColor.getHexString()}` // Die aktuell gewählte Volltonfarbe
                     }
 
+                    // Renderer-Konfigurationen sammeln
+                    const exportedRendererConfig = {
+                        shadowMap: {
+                            enabled: this.#renderer.shadowMap.enabled,
+                            type: this.#renderer.shadowMap.type
+                        }
+                    }
+
                     // Gesamtkonfiguration erstellen
                     const fullConfig = {
                         cameraConfig: currentCameraConfig, 
                         lightSettings: exportedLightSettings, // Füge die Light-Settings hinzu
                         // Behalte den Namen 'environmentMap' für die Config-Datei, wie in deiner index.html
                         ...(Object.keys(exportedEnvMapSettings).length > 0 && { environmentMap: exportedEnvMapSettings }), 
-                        backgroundSettings: exportedBackgroundSettings
+                        backgroundSettings: exportedBackgroundSettings, 
+                        rendererConfig: exportedRendererConfig
                     }
 
                     const jsonConfig = JSON.stringify(fullConfig, null, 2)
