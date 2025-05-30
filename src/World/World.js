@@ -1,4 +1,4 @@
-// src/World/World.js 23:16
+// src/World/World.js 22:21
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -224,6 +224,18 @@ class World {
             // this.#controls.target.set(0, 0.75, 0) // Kann weg
         this.#controls.enableDamping = true
         this.#controls.dampingFactor = 0.05 // Stärke der Dämpfung
+
+        // Schränke Kamerarotation im normalen Modus ein, im Debug soll man auch unter die Bodenplatte sehen können
+        if (!this.#isDebugMode) {
+            this.#controls.maxPolarAngle = Math.PI * 0.5 // Verhindert das Schauen unter die XZ-Ebene
+            console.log(`[World${instanceIdLog}] maxPolarAngle auf Math.PI * 0.5 gesetzt (Debug-Modus ist AUS).`)
+        } else {
+            // Im Debug-Modus bleibt maxPolarAngle unbegrenzt (Standardverhalten von OrbitControls)
+            // oder könnte explizit auf Math.PI gesetzt werden, um sicherzustellen, dass es die volle Freiheit gibt.
+            // Standard ist meistens ausreichend.
+            console.log(`[World${instanceIdLog}] maxPolarAngle bleibt unbegrenzt (Debug-Modus ist AN).`)
+        }
+
         // WICHTIG: Damit Raycasting und OrbitControls nicht kollidieren, 
         // müssen die Controls wissen, wann sie *nicht* reagieren sollen (z.B. während Dragging)
         // Das ist hier noch nicht implementiert, aber für ein einfaches Klicken rechts erstmal. 
