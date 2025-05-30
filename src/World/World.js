@@ -363,18 +363,43 @@ class World {
                         if (lightConfig.castShadow === true) {
                             light.castShadow = true // Setze die THREE.js-Eigenschaft castShadow
 
-                            // Standard-Schattenparameter (diese können später auch konfigurierbar werden)
-                            // Map Size: Auflösung der Schattenkarte (höher = schärfer, aber langsamer)
-                            light.shadow.mapSize.set(1024, 1024)
+                            // Standard-Schattenparameter, die überschrieben werden können
+                            
+                            let sMapSize = 1024 // Map Size: Auflösung der Schattenkarte (höher = schärfer, aber langsamer)
+                            
                             // Camera Frustum: Bereich, der Schatten werfen kann (muss groß genug sein, um alle Schatten-werfenden Objekte zu erfassen)
-                            light.shadow.camera.near = 0.5
-                            light.shadow.camera.far = 50 // Muss weiter sein als die weiteste Entfernung, in der Schatten sichtbar sein sollen
-                            light.shadow.camera.left = -10 // Beispielwerte: an Szene anzupassen
-                            light.shadow.camera.right = 10
-                            light.shadow.camera.top = 10
-                            light.shadow.camera.bottom = -10
-                            // Bias: Hilft bei Schatten-Artefakten
-                            light.shadow.bias = -0.001 // Kleiner negativer Wert hilft oft
+                            let sCamNear = 0.5
+                            let sCamFar = 50 // Muss weiter sein als die weiteste Entfernung, in der Schatten sichtbar sein sollen
+                            let sCamLeft = -10 // Beispielwerte: an Szene anzupassen
+                            let sCamRight = 10
+                            let sCamTop = 10
+                            let sCamBottom = -10
+                            let sBias = -0.001 // Bias: Hilft bei Schatten-Artefakten. Kleiner negativer Wert hilft oft.
+                            let sRadius = 1 // Standard-Radius für PCFSoftShadowMap, falls nicht anders gesetzt
+
+                            // Lese detaillierte Schattenparameter aus der Config, falls vorhanden
+                            if (lightConfig.shadowParameters) {
+                                const params = lightConfig.shadowParameters
+                                sMapSize = params.mapSize !== undefined ? params.mapSize : sMapSize
+                                sCamNear = params.cameraNear !== undefined ? params.cameraNear : sCamNear
+                                sCamFar = params.cameraFar !== undefined ? params.cameraFar : sCamFar
+                                sCamLeft = params.cameraLeft !== undefined ? params.cameraLeft : sCamLeft
+                                sCamRight = params.cameraRight !== undefined ? params.cameraRight : sCamRight
+                                sCamTop = params.cameraTop !== undefined ? params.cameraTop : sCamTop
+                                sCamBottom = params.cameraBottom !== undefined ? params.cameraBottom : sCamBottom
+                                sBias = params.bias !== undefined ? params.bias : sBias
+                                sRadius = params.radius !== undefined ? params.radius : sRadius
+                            }
+
+                            light.shadow.mapSize.set(sMapSize, sMapSize)
+                            light.shadow.camera.near = sCamNear
+                            light.shadow.camera.far = sCamFar
+                            light.shadow.camera.left = sCamLeft
+                            light.shadow.camera.right = sCamRight
+                            light.shadow.camera.top = sCamTop
+                            light.shadow.camera.bottom = sCamBottom
+                            light.shadow.bias = sBias
+                            light.shadow.radius = sRadius
 
                             console.log(`[World${instanceIdLog}] DirectionalLight '${light.name}' für Schattenwurf konfiguriert.`)
                         } else {
@@ -387,8 +412,8 @@ class World {
                             light.userData.shadowCameraHelper = shadowCameraHelper // Speichern für Dispose/GUI
                             console.log(`[World${instanceIdLog}] DirectionalLight '${light.name}' ShadowCameraHelper hinzugefügt.`)
                         }
-
                         break
+
                     case 'PointLight':
                         light = new PointLight(
                             color, 
@@ -414,10 +439,26 @@ class World {
                             light.castShadow = true
 
                             // Standard-Schattenparameter
-                            light.shadow.mapSize = new Vector2(1024, 1024)
-                            light.shadow.camera.near = 0.1 // Oft näher als DirectionalLight
-                            light.shadow.camera.far = lightConfig.distance > 0 ? lightConfig.distance : 100 // Weite sollte entsprechend der Lichtentfernung oder groß genug sein
-                            light.shadow.bias = -0.001
+                            let sMapSize = 1024
+                            let sCamNear = 0.1 // Oft näher als DirectionalLight
+                            let sCamFar = lightConfig.distance > 0 ? lightConfig.distance : 100 // Weite sollte entsprechend der Lichtentfernung oder groß genug sein
+                            let sBias = -0.001
+                            let sRadius = 1
+
+                            if (lightConfig.shadowParameters) {
+                                const params = lightConfig.shadowParameters
+                                sMapSize = params.mapSize !== undefined ? params.mapSize : sMapSize
+                                sCamNear = params.cameraNear !== undefined ? params.cameraNear : sCamNear
+                                sCamFar = params.cameraFar !== undefined ? params.cameraFar : sCamFar
+                                sBias = params.bias !== undefined ? params.bias : sBias
+                                sRadius = params.radius != undefined ? params.radius : sRadius
+                            }
+
+                            light.shadow.mapSize.set(sMapSize, sMapSize)
+                            light.shadow.camera.near = sCamNear
+                            light.shadow.camera.far = sCamFar
+                            light.shadow.bias = sBias
+                            light.shadow.radius = sRadius
 
                             console.log(`[World${instanceIdLog}] PointLight '${light.name}' für Schattenwurf konfiguriert.`)
                         } else {
@@ -430,8 +471,8 @@ class World {
                             light.userData.shadowCameraHelper = shadowCameraHelper
                             console.log(`[World${instanceIdLog}] PointLight '${light.name}' ShadowCameraHelper hinzugefügt.`)
                         }
-
                         break
+
                     // TODO: SpotLight Implementierung hinzufügen (ähnlich wie PointLight für Schatten)
                     default:
                         console.warn(`[World${instanceIdLog}] Unbekannter Licht-Typ in Konfiguration: ${lightConfig.type}`)
@@ -1319,6 +1360,23 @@ class World {
                             lightConfig.decay = parseFloat(light.decay.toFixed(2))
                         }
                         // Hier können weitere lichttypspezifische Eigenschaften hinzugefügt werden (z.B. für SpotLight)
+
+                        if (light.castShadow && (light.isDirectionalLight || light.isPointLight || light.isSpotLight)) {
+                            lightConfig.shadowParameters = {
+                                mapSize: light.shadow.mapSize.width, // Annahme: width und height sind gleich
+                                cameraNear: parseFloat(light.shadow.camera.near.toFixed(3)),
+                                cameraFar: parseFloat(light.shadow.camera.far.toFixed(3)),
+                                bias: parseFloat(light.shadow.bias.toFixed(4)), 
+                                radius: parseFloat(light.shadow.radius.toFixed(2))
+                            }
+                            // Spezifische Parameter für orthographische Schattenkameras
+                            if (light.shadow.camera.isOrthographicCamera) {
+                                lightConfig.shadowParameters.cameraLeft = parseFloat(light.shadow.camera.left.toFixed(2))
+                                lightConfig.shadowParameters.cameraRight = parseFloat(light.shadow.camera.right.toFixed(2))
+                                lightConfig.shadowParameters.cameraTop = parseFloat(light.shadow.camera.top.toFixed(2))
+                                lightConfig.shadowParameters.cameraBottom = parseFloat(light.shadow.camera.bottom.toFixed(2))
+                            }
+                        }
 
                         exportedLightSettings.push(lightConfig)
                     })
