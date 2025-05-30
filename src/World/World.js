@@ -88,6 +88,7 @@ class World {
     #useEnvMapAsBackground = true
     #solidBackgroundColor = new Color(0x222233)
     #guiBgColorController = null // Referent auf den GUI-Controller für den Farb-Picker (optional)
+    #originalSceneItemConfigs = [] // Für die ursprünglichen sceneItems aus der Config
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
     constructor(container, mainConfig, isDebugMode = false, instanceId) {
@@ -144,6 +145,8 @@ class World {
             this.#useEnvMapAsBackground = false
             console.warn(`[World${instanceIdLog}] 'useEnvironmentMapAsBackground' ist true, aber keine EnvironmentMap-URL gefunden. Wechsle zu Vollton-Background`)
         }
+
+        this.#originalSceneItemConfigs = mainConfig?.sceneItems || [] // Speichere die originalen sceneItems (Objekte)
 
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
@@ -1411,7 +1414,8 @@ class World {
                         // Behalte den Namen 'environmentMap' für die Config-Datei, wie in deiner index.html
                         ...(Object.keys(exportedEnvMapSettings).length > 0 && { environmentMap: exportedEnvMapSettings }), 
                         backgroundSettings: exportedBackgroundSettings, 
-                        rendererConfig: exportedRendererConfig
+                        rendererConfig: exportedRendererConfig, 
+                        sceneItems: this.#originalSceneItemConfigs
                     }
 
                     const jsonConfig = JSON.stringify(fullConfig, null, 2)
