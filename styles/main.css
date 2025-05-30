@@ -107,3 +107,7 @@ canvas {
     background-color: rgb(34, 26, 89);
     transition: border-color 300ms;
 }
+
+.lil-gui button .name {
+    outline: solid 1px #747474;
+}
