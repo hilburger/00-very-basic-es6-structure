@@ -1,4 +1,4 @@
-// src/World/World.js 22:21
+// src/World/World.js 20:29
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -88,6 +88,8 @@ class World {
     #useEnvMapAsBackground = true
     #solidBackgroundColor = new Color(0x222233)
     #guiBgColorController = null // Referent auf den GUI-Controller für den Farb-Picker (optional)
+    #groundPlane = null // Instanzvariable für die Referenz zur konfigurierbaren Bodenplatte
+    #groundPlaneConfig = null
     #originalSceneItemConfigs = [] // Für die ursprünglichen sceneItems aus der Config
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
@@ -95,6 +97,9 @@ class World {
         this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
+
+        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
+        console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
 
         // Renderer-Config aus mainConfig extrahieren
         const rendererConf = mainConfig?.rendererConfig?.shadowMap || {}
@@ -146,10 +151,50 @@ class World {
             console.warn(`[World${instanceIdLog}] 'useEnvironmentMapAsBackground' ist true, aber keine EnvironmentMap-URL gefunden. Wechsle zu Vollton-Background`)
         }
 
+        this.#groundPlane = null // Initialisiere die Bodenplatte mit null
+
         this.#originalSceneItemConfigs = mainConfig?.sceneItems || [] // Speichere die originalen sceneItems (Objekte)
 
-        const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
-        console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
+        const configuredPlaneFromSceneItems = this.#originalSceneItemConfigs.find(item => item.type === 'plane')
+        if (configuredPlaneFromSceneItems) {
+            this.#groundPlaneConfig = {
+                type: 'plane', // Wichtig für spätere Identifikation
+                name: configuredPlaneFromSceneItems.name || 'GroundPlane_Config', 
+                // Wichtig: Default auf 'circle', wenn shape nicht spezifiziert oder ungültig ist
+                shape: ['rectangle', 'circle', 'none'].includes(configuredPlaneFromSceneItems.shape)
+                    ? configuredPlaneFromSceneItems.shape
+                    : 'circle',
+                size: { // Defaults aus Plane.js übernehmen oder anpassen
+                    width: configuredPlaneFromSceneItems.size?.width ?? 10,
+                    height: configuredPlaneFromSceneItems.size?.height ?? 10, 
+                    radius: configuredPlaneFromSceneItems.size?.radius ?? 5    
+                },
+                segments: configuredPlaneFromSceneItems.segments ?? 32,
+                color: configuredPlaneFromSceneItems.color || 'darkgrey',
+                // Behalte original Position/Rotation/Scale bei 
+                position: configuredPlaneFromSceneItems.position || { x: 0, y: 0, z: 0 },
+                // Die Plane.js setzt ihre eigene X-Rotation. Diese hier wäre ein Override. 
+                // Für den Start lassen wir es einfach, die Plane-Klasse rotiert sich selbst flach. 
+                rotation: configuredPlaneFromSceneItems.rotation || { x: 0, y: 0, z: 0 },
+                scale: configuredPlaneFromSceneItems.scale || { x: 1, y: 1, z: 1 }
+            }
+            console.log(`[World${instanceIdLog}] GroundPlane-Konfiguration aus sceneItems geladen:`, JSON.parse(JSON.stringify(this.#groundPlaneConfig)))
+        } else {
+            this.#groundPlaneConfig = {
+                type: 'plane', 
+                name: 'GroundPlane_Default', 
+                shape: 'circle', // Standardmäßig ein sichtbarer Kreis
+                size: { width: 10, height: 10, radius: 5 }, 
+                segments: 32, 
+                color: 'darkgrey', 
+                receiveShadow: true, 
+                castShadow: false, 
+                position: { x: 0, y: 0, z: 0 }, 
+                rotation: { x: 0, y: 0, z: 0 }, 
+                scale: { x: 1, y: 1, z: 1 }
+            }
+            console.log(`[World${instanceIdLog}] Keine GroundPlane-Konfiguration in sceneItems gefunden. Default wird verwendet: `, JSON.parse(JSON.stringify(this.#groundPlaneConfig)))
+        }
         
         // Für sauberes Logging ohne Proxyobjekte, falls #cameraSettings später komplexer wird
         console.log(`[World${instanceIdLog}] Kamera-Settings initial:`, JSON.parse(JSON.stringify(this.#cameraSettings)))
@@ -173,6 +218,7 @@ class World {
         // --- Instanzfelder initialisieren ---
         this.#clickableObjects = []
         this.#lights = [] // Initialisiere leeres Array
+        this.#groundPlane = null // Sicherstellen, dass es null ist, wird in init() korrekt gesetzt
 
         // 5. Ladeanzeigen-UI erstellen und zum Container hinzufügen
         this.#createLoadingIndicatorUI()
@@ -274,10 +320,6 @@ class World {
         this.#setupLights(instanceIdLog)
 
         // 10. Erstelle die 3D-Objekte und füge sie der DIESER Instanz hinzu ---
-        
-        // Ebene für DIESE Instanz hinzufügen
-        const plane = new Plane() // Erstellt Instanz der TNT-Plane-Klasse
-        this.#scene.add(plane) // Füge zur Instanz-Szene hinzu
 
             // Optional: Füge Ebene zu klickbaren Objekten hinzu
             // this.#clickableObjects.push(plane)
@@ -576,6 +618,84 @@ class World {
             console.log(`[World${instanceIdLog}] Kamera-Position auf Fallback gesetzt: `, camera.position)
         }        
         return camera
+    }
+
+    #updateGroundPlaneInstance(instanceIdLogParam) {
+        const instanceIdLog = instanceIdLogParam || ` Instance ${this.#instanceId} (${this.#container.id})`
+
+        const config = this.#groundPlaneConfig // Die aktuelle WUnschkonfiguration
+
+        // Fall 1: Plane soll nicht sichtbar sein ('none')
+        if (config.shape === 'none') {
+            if (this.#groundPlane) { // Wenn eine Plane existiert, entferne sie
+                console.log(`[World${instanceIdLog}] GroundPlane wird entfernt (shape: 'none). Name: ${this.#groundPlane.name}`)
+                this.#scene.remove(this.#groundPlane)
+                // Geometrie und Material freigeben (wichtig, wenn Plane eigene Ressourcen hat)
+                if (this.#groundPlane.geometry) this.#groundPlane.geometry.dispose()
+                if (this.#groundPlane.material) {
+                    if (Array.isArray(this.#groundPlane.material)) {
+                        this.#groundPlane.material.forEach(m => m.dispose())
+                    } else { 
+                        this.#groundPlane.material.dispose()
+                    }
+                }
+                this.#groundPlane = null
+            }
+            return
+        }
+
+        // Fall 2: Die Plane soll sichtbar sein ('rectangle' oder ''circle)
+        // Hier gehen wir davo aus, dass this.#groundPlaneConfig die vollen Attribute ernthält (pos, tor, scale etc.)
+        if (!this.#groundPlane) {
+            // Es gibt keine Plane, aber es soll eine geben -> neu erstellen
+            console.log(`[World${instanceIdLog}] Erstelle neue GroundPlane. Config: `, JSON.parse(JSON.stringify(config)))
+            this.#groundPlane = new Plane(config) // Plane-Constructor nutzt shape, size, color etc. aus der config
+            // Position, Rotation, Skalierung aus der #groundPlaneConfig anwenden
+            // Die Plane-Klasse rotiert sich intern schon flach. Diese Werte hier sind Overrides/Zusätze.
+            this.#groundPlane.position.set(config.position.x, config.position.y, config.position.z)
+            this.#groundPlane.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z) // Vorsicht mit X-Rotation hier vs. Plane-intern
+            this.#groundPlane.scale.set(config.scale.x, config.scale.y, config.scale.z)
+            // Explizit noch einmal die X-Rotation der Plane-Klasse anwenden, falls nicht in der config.rotation.x definiert
+            if (config.rotation.x === 0 && this.#groundPlane.rotation.x !== -Math.PI * 0.5) {
+                this.#groundPlane.rotation.x = -Math.PI * 0.5
+            }
+
+            this.#scene.add(this.#groundPlane)
+            // Füge zur Framing-Liste hinzu (muss hier zugänglich sein, ggf. als Parameter übergeben oder als Instandvariable)
+            // this.loadedSceneObjectsForFraming.push(this.#groundPlane) // Dies muss im Kontext von init() passieren. 
+            console.log(`[World${instanceIdLog}] GroundPlane '${this.#groundPlane.name}' erstellt und hinzugefügt.`)
+        } else {
+            // Es gibt bereits eine Plane -> aktualisiere sie
+            console.log(`[World${instanceIdLog}] Aktualisiere bestehende GroundPlane. Config:`, JSON.parse(JSON.stringify(config)))
+            this.#groundPlane.updatePlane(config) // updatePlane kümmert sich um shape, size
+            // Materialeigenschaften (color) werden von updatePlane noch nicht behandelt, das müssen wir erweitern oder hier setzen.
+            if (this.#groundPlane.material && this.#groundPlane.material.color) {
+                this.#groundPlane.material.color.set(config.color)
+            }
+            this.#groundPlane.name = config.name
+            this.#groundPlane.receiveShadow = config.receiveShadow
+            this.#groundPlane.castShadow = config.castShadow
+            // Position, Rotation, Skalierung aktualisieren
+            this.#groundPlane.position.set(config.position.x, config.position.y, config.position.z)
+            this.#groundPlane.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z) // Vorsicht mit X-Rotation
+            this.#groundPlane.scale.set(config.scale.x, config.scale.y, config.scale.z)
+            if (config.rotation.x === 0 && this.#groundPlane.rotation.x !== -Math.PI * 0.5) {
+                this.#groundPlane.rotation.x = -Math.PI * 0.5
+            }
+
+            console.log(`[World${instanceIdLog}] GroundPlane '${this.#groundPlane.name}' aktualisiert.`)
+        }
+
+        // Schatteneigenschaften (werden in Plane.js gesetzt, aber zur Sicherheit)
+        // if (this.#groundPlane) {
+        //     this.#groundPlane.receiveShadow = config.receiveShadow
+        //     this.#groundPlane.castShadow = config.castShadow
+
+        //     // Stelle sicher, dass die Plane in der Framing-Liste ist, wenn sie existiert
+        //     // if (this.loadedSceneObjectsForFraming && !this.loadedSceneObjectsForFraming.includes(this.#groundPlane)) {
+        //     //     this.loadedSceneObjectsForFraming.push(this.#groundPlane)
+        //     // }
+        // }
     }
 
     #createScene() {
@@ -1552,18 +1672,24 @@ class World {
         }
     }
 
-
     // --- Asynchrone Methode zum Initialisieren/Laden von Assets -> übergibt alles an LoadingManager ---
-    async init(sceneItemConfigs) {
+    async init(sceneItemConfigsArgument) {
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})`
-        console.log(`[World${instanceIdLog}] init gestartet mit ${sceneItemConfigs.length} Item(s).`)
+        console.log(`[World${instanceIdLog}] init gestartet mit ${sceneItemConfigsArgument.length} Item(s).`)
 
         // --- Array zum Sammeln der Objekte, die für Kamera-Framing relevant sind ---
         const loadedSceneObjectsForFraming = [] 
         this.#clickableObjects =[] // Instanzvariable für klickbare Objekte für diese Instanz zurücksetzen/initialisieren
 
         // Schleife über alle Objektkonfigurationen im Array
-        for (const itemConfig of sceneItemConfigs) {
+        for (const itemConfig of this.#originalSceneItemConfigs) {
+            // Überspringe hier die Verarbeitung des 'plane'-Typs, da dieser 
+            // durch this.#groundPlaneConfig und #updateGroundPlaneInstance gehandhabt wird
+            if (itemConfig.type === 'plane') {
+                console.log(`[World${instanceIdLog}] Überspringe 'plane'-Item '${itemConfig.name || ''}' in der Hauptschleife von init(). Wird separat über #groundPlaneConfig behandelt.`)
+                continue
+            }
+
             console.log(`[World${instanceIdLog}] Verarbeitet Item:`, itemConfig)
             let loadedObject = null
 
@@ -1587,14 +1713,6 @@ class World {
                         })
                         console.log(`[World${instanceIdLog}] Objekt '${itemConfig.name || 'Cube'}' instanziert.` )
                         break // Wichtig!
-
-                    case 'plane': // Kann jetzt auch per Config kommen (optional)
-                        // Erstelle eine Instanz der Plane-Klasse
-                        loadedObject = new Plane(itemConfig) // Plane lädt keine Assets, braucht keinen Manager
-                        // Namen konsistent setzen
-                        loadedObject.name = itemConfig.name || `ConfigPlane_${loadedSceneObjectsForFraming.length}`
-                        console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' (Plane) erstellt.`)
-                        break
 
                     case 'gltf': 
                         if (!itemConfig.assetUrl) {
@@ -1626,7 +1744,7 @@ class World {
 
                 // Wenn ein Objekt erfolgreich geladen/erstellt wurde
                 if (loadedObject) {
-                    // Konfiguration anwenden (Position, Rotation, Skalierung etc.)
+                    // Allgemeine Konfiguration anwenden (Name, Position, Rotation, Skalierung, Schatten)
                     // Namen wurden oben schon gesetzt
                         // if (itemConfig.name) loadedObject.name = itemConfig.name
 
@@ -1641,11 +1759,13 @@ class World {
 
                     // Rotation nur setzen, wenn nicht in der Komponente selbst gesetzt (wie bei Plane)
                     if (itemConfig.rotation) {
-                        loadedObject.rotation.set(
-                            itemConfig.rotation.x || 0, 
-                            itemConfig.rotation.y || 0, 
-                            itemConfig.rotation.z || 0
-                        )
+                        if (itemConfig !== 'plane' || itemConfig.rotation.x !== undefined) {
+                            loadedObject.rotation.set(
+                                itemConfig.rotation.x || 0, 
+                                itemConfig.rotation.y || 0, 
+                                itemConfig.rotation.z || 0
+                            )
+                        }
                     } else if (itemConfig.type !== 'plane') {
                         loadedObject.rotation.set(0, 0, 0)
                     }
@@ -1714,32 +1834,23 @@ class World {
             }
         }
 
-        // --- Fallback Bodenplatte (falls keine Plane in Config definiert wurde) ---
-        // Prüfe, ob unter den geladenen Objekten eine Plane ist
-        const hasConfigPlane = loadedSceneObjectsForFraming.some(obj => obj.isMesh && obj.geometry.type === 'PlaneGeometry')
+        // --- Bodenpplatte aktualisieren
+        // Rufe Methode #updateGroundPlaneInstance auf, um die Bodenplatte basierend auf #groundPlaneConfig zu handhaben
+        // this.#groundPlane wird innerhalb dieser Methode gesetzt oder auf null. 
+        this.#updateGroundPlaneInstance(instanceIdLog)
 
-        if (!hasConfigPlane) {
-            console.log(`[World${instanceIdLog}] Keine Plane in data-config gefunden, die Geometrie enthält. Füge Standard-Bodenplatte hinzu.`)
-            const defaultPlane = new Plane()
-            this.#scene.add(defaultPlane)
-            // Füge die Standard-Plane hinzu
-            loadedSceneObjectsForFraming.push(defaultPlane)
-
-            // receiveShadow für die Standard-Plane setzen
-            defaultPlane.receiveShadow = true
-            defaultPlane.castShadow = false
-            console.log(`[World${instanceIdLog}] Standard-Bodenplatte '${defaultPlane.name}' mit receiveShadow=true hinzugefügt und zu loadedSceneObjectsForFraming hinzugefügt.`)
-
-            // Standard Plane soll nicht klickbar sein, daher nicht zu #clickableObjects hinzufügen
-
+        // Wenn die Bodenplatte (das Mesh this.#groundPlane) nach dem Aufruf von #updateGroundPlaneInstance existiert, 
+        // füge sie zur lokalen Framing-Liste hinzu
+        if (this.#groundPlane) {
+            if (!loadedSceneObjectsForFraming.includes(this.#groundPlane)) {
+                loadedSceneObjectsForFraming.push(this.#groundPlane)
+                console.log(`[World${instanceIdLog}] GroundPlane '${this.#groundPlane.name}' zur Framing-Liste hinzugefügt.`)
+            }
         } else {
-            console.log(`[WOrld${instanceIdLog}] Eine Plane mit Geometrie wurde in data-config gefunden. Füge keine Standard-Bodenplatte hinzu.`)
-
-            // HINWEIS: Stelle sicher, dass die in der Konfig geladene Plane receiveShadow auf true hat.
-            // Das wird bereits in der obigen Schleife behandelt (Standard true).
+            console.log(`[World${instanceIdLog}] Keine GroundPlane (this.#groundPlane ist null nach #updateGroundPlaneInstance).`)
         }
         
-        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigs.length} Szene-Items in init() abgeschlossen. ${loadedSceneObjectsForFraming.length} Objekte für Framing gefunden.`)
+        console.log(`[World${instanceIdLog}] Verarbeitung aller ${sceneItemConfigsArgument.length} Szene-Items in init() abgeschlossen. ${loadedSceneObjectsForFraming.length} Objekte für Framing gefunden.`)
 
         // --- Kamera-Framing ---
         // Bedingungen für automatisches Framing: 
@@ -1753,7 +1864,7 @@ class World {
                                  !this.#cameraSettings.initialLookAt)
 
         if (performFraming) {
-            console.log(`[World${instanceIdLog}] Automatische Kamera-Framing wird durchgeführt anhand von ${loadedSceneObjects.length} Objekten.`)
+            console.log(`[World${instanceIdLog}] Automatische Kamera-Framing wird durchgeführt anhand von ${loadedSceneObjectsForFraming.length} Objekten.`)
             const overallBoundingBox = new Box3()
 
             loadedSceneObjectsForFraming.forEach(object => {
