@@ -1436,6 +1436,155 @@ class World {
                 // lightsFolder.close()
             }
 
+            // --- Bodenplatte ---
+            if (this.#groundPlaneConfig) {
+                const planeFolder = this.#gui.addFolder('Bodenplatte')
+                planeFolder.close()
+
+                // Temporäre Objekte für GUI-Bindung, falls direktes Binding Probleme macht oder wir Stringwerte brauchen
+                const planeGuiProxy = {
+                    shape: this.#groundPlaneConfig.shape, 
+                    color: this.#groundPlaneConfig.color, 
+                    width: this.#groundPlaneConfig.size.width,
+                    height: this.#groundPlaneConfig.size.height,
+                    radius: this.#groundPlaneConfig.size.radius,
+                    segments: this.#groundPlaneConfig.segments,
+                    positionX: this.#groundPlaneConfig.position.x,
+                    positionY: this.#groundPlaneConfig.position.y,
+                    positionZ: this.#groundPlaneConfig.position.z,
+                    rotationX: this.#groundPlaneConfig.rotation.x, // X-Rotation auch, falls man sie doch mal braucht
+                    rotationY: this.#groundPlaneConfig.rotation.y,
+                    rotationZ: this.#groundPlaneConfig.rotation.z,
+                    scaleX: this.#groundPlaneConfig.scale.x,
+                    scaleY: this.#groundPlaneConfig.scale.y,
+                    scaleZ: this.#groundPlaneConfig.scale.z,
+                    receiveShadow: this.#groundPlaneConfig.receiveShadow,
+                    castShadow: this.#groundPlaneConfig.castShadow
+                }
+
+                // Controller für Form (Dropdown)
+                const shapeController = planeFolder.add(planeGuiProxy, 'shape', ['rectangle', 'circle', 'none'])
+                    .name('Form')
+                    .onChange(value => {
+                        this.#groundPlaneConfig.shape = value
+                        this.#updateGroundPlaneInstance(instanceIdLog)
+                        updatePlaneDimensionControllerVisibility() // Sichtbarkeit der Dimensionsregler anpassen
+                    })
+                
+                // Controller für Farbe
+                planeFolder.addColor(planeGuiProxy, 'color')
+                    .name('Farbe')
+                    .onChange(value => {
+                        this.#groundPlaneConfig.color = value
+                        // Wenn die Plane existiert, Farbe direkt aktualisieren
+                        if (this.#groundPlane && this.#groundPlane.material && this.#groundPlane.material.color) {
+                            this.#groundPlane.material.color.set(value)
+                        } else if (this.#groundPlaneConfig.shape !== none && !this.#groundPlane) {
+                            // Falls Plane nicht existiert, aber sichtbar sein soll, neu erstellen/aktualisieren
+                            this.#updateGroundPlaneInstance(instanceIdLog)
+                        }
+                    })
+
+                // Platzhalter für Dimensions-Controller
+                let widthController, heightController, radiusController, segmentsController
+
+                const dimFolder = planeFolder.addFolder('Dimensionen')
+                dimFolder.close()
+
+                widthController = dimFolder.add(planeGuiProxy, 'width', 0.1, 100, 0.1)
+                    .name('Breite (Rechteck)')
+                    .onChange(value => {
+                        this.#groundPlaneConfig.size.width = value
+                        if (this.#groundPlaneConfig.shape === 'rectangle') {
+                            this.#updateGroundPlaneInstance(instanceIdLog)
+                        }
+                    })
+
+                heightController = dimFolder.add(planeGuiProxy, 'height', 0.1, 100, 0.1)
+                    .name('Höhe/Tiefe (Rechteck)')
+                    .onChange(value => {
+                        this.#groundPlaneConfig.size.height = value
+                        if (this.#groundPlaneConfig.shape === 'rectangle') {
+                            this.#updateGroundPlaneInstance(instanceIdLog)
+                        }
+                    })
+
+                radiusController = dimFolder.add(planeGuiProxy, 'radius', 0.1, 50, 0.1)
+                    .name('Radius (Kreis)')
+                    .onChange(value => {
+                        this.#groundPlaneConfig.size.radius = value
+                        if (this.#groundPlaneConfig.shape === 'circle') {
+                            this.#updateGroundPlaneInstance(instanceIdLog)
+                        }
+                    })
+
+                segmentsController = dimFolder.add(planeGuiProxy, 'segments', 3, 64, 1)
+                    .name('Segmente (Kreis)')
+                    .onChange(value => {
+                        this.#groundPlaneConfig.segments = value
+                        if (this.#groundPlaneConfig.shape === 'circle') {
+                            this.#updateGroundPlaneInstance(instanceIdLog)
+                        }
+                    })
+                
+                // Funktion zur Steuerung der Sichtbarkeit der Dimensionsregler
+                const updatePlaneDimensionControllerVisibility = () => {
+                    const currentShape = this.#groundPlaneConfig.shape
+                    widthController.domElement.style.display = currentShape === 'rectangle' ? '' : 'none'
+                    heightController.domElement.style.display = currentShape === 'rectangle' ? '' : 'none'
+                    radiusController.domElement.style.display = currentShape === 'circle' ? '' : 'none'
+                    segmentsController.domElement.style.display = currentShape === 'circle' ? '' : 'none'
+                    // Dimension-Ordner verstecken, wenn shape 'none'
+                    dimFolder.domElement.style.display = currentShape === 'none' ? 'none' : ''
+                }
+                updatePlaneDimensionControllerVisibility() // Initiale Sichtbarkeit setzen
+
+                // --- Position, Rotation, Scale für Bodenplatte ---
+                const transformFolder = planeFolder.addFolder('Transformation')
+                transformFolder.close()
+
+                const posFolder = transformFolder.addFolder('Position')
+                posFolder.add(planeGuiProxy, 'positionX', -50, 50, 0.1).name('X').listen()
+                    .onChange(v => {this.#groundPlaneConfig.position.x = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                posFolder.add(planeGuiProxy, 'positionY', -50, 50, 0.1).name('Y').listen()
+                    .onChange(v => {this.#groundPlaneConfig.position.y = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                posFolder.add(planeGuiProxy, 'positionZ', -50, 50, 0.1).name('Z').listen()
+                    .onChange(v => {this.#groundPlaneConfig.position.z = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                posFolder.close()
+
+                const rotFolder = transformFolder.addFolder('Rotation (Radiant)')
+                rotFolder.add(planeGuiProxy, 'rotationX', -Math.PI, Math.PI, 0.01).name('X').listen()
+                    .onChange(v => { this.#groundPlaneConfig.rotation.x = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                rotFolder.add(planeGuiProxy, 'rotationY', -Math.PI, Math.PI, 0.01).name('Y').listen()
+                    .onChange(v => { this.#groundPlaneConfig.rotation.y = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                rotFolder.add(planeGuiProxy, 'rotationZ', -Math.PI, Math.PI, 0.01).name('Z').listen()
+                    .onChange(v => { this.#groundPlaneConfig.rotation.z = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                rotFolder.close()
+
+                const scaleFolder = transformFolder.addFolder('Skalierung')
+                scaleFolder.add(planeGuiProxy, 'scaleX', 0.1, 10, 0.01).name('X').listen()
+                    .onChange(v => { this.#groundPlaneConfig.scale.x = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                scaleFolder.add(planeGuiProxy, 'scaleY', 0.1, 10, 0.01).name('Y').listen()
+                    .onChange(v => { this.#groundPlaneConfig.scale.y = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                scaleFolder.add(planeGuiProxy, 'scaleZ', 0.1, 10, 0.01).name('Z').listen()
+                    .onChange(v => { this.#groundPlaneConfig.scale.z = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                scaleFolder.close()
+
+                // --- Schatten für Bodenplatte ---
+                const shadowFolder = planeFolder.addFolder('Schatten')
+                shadowFolder.add(planeGuiProxy, 'receiveShadow').name('Empfängt Schatten')
+                    .onChange(v => { 
+                        this.#groundPlaneConfig.receiveShadow = v 
+                        this.#updateGroundPlaneInstance(instanceIdLog) 
+                    })
+                shadowFolder.add(planeGuiProxy, 'castShadow').name('Wirft Schatten')
+                    .onChange(v => {
+                        this.#groundPlaneConfig.castShadow = v
+                        this.#updateGroundPlaneInstance(instanceIdLog)
+                    })
+            }
+            // --- ENDE GUI Bodenplatte ---
+
             // --- Export Button ---
             const exportSettings = {
                 exportFullConfig: () => {
