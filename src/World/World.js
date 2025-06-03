@@ -1,4 +1,4 @@
-// src/World/World.js 20:29
+// src/World/World.js 22:59
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -171,6 +171,8 @@ class World {
                 },
                 segments: configuredPlaneFromSceneItems.segments ?? 32,
                 color: configuredPlaneFromSceneItems.color || 'darkgrey',
+                receiveShadow: configuredPlaneFromSceneItems.receiveShadow !== undefined ? configuredPlaneFromSceneItems.receiveShadow : true,
+                castShadow: configuredPlaneFromSceneItems.castShadow !== undefined ? configuredPlaneFromSceneItems.castShadow : false,
                 // Behalte original Position/Rotation/Scale bei 
                 position: configuredPlaneFromSceneItems.position || { x: 0, y: 0, z: 0 },
                 // Die Plane.js setzt ihre eigene X-Rotation. Diese hier wäre ein Override. 
@@ -1609,7 +1611,7 @@ class World {
                         far: this.#cameraSettings.far,
                     }
 
-                    // Licht-Konfiguration sammeln
+                    // 2. Licht-Konfiguration sammeln
                     const exportedLightSettings = []
                     this.#lights.forEach((light, index) => {
                         const lightConfig = {
@@ -1665,7 +1667,7 @@ class World {
                         exportedLightSettings.push(lightConfig)
                     })
 
-                    // Environment Map Einstellungen zum Export hinzufügen
+                    // 3. Environment Map Einstellungen zum Export hinzufügen
                     const exportedEnvMapSettings = {}
                     if (this.#environmentMapUrl) {
                         exportedEnvMapSettings.url = this.#environmentMapUrl
@@ -1674,13 +1676,13 @@ class World {
                         // useAsBackground wird jetzt über backgroundSettings exportiert
                     }
 
-                    // Hintergrund-Einstellungen exportieren
+                    // 4. Hintergrund-Einstellungen exportieren
                     const exportedBackgroundSettings = {
                         useEnvironmentMapAsBackground: this.#useEnvMapAsBackground, // Der aktuelle Zustand
                         color: `#${this.#solidBackgroundColor.getHexString()}` // Die aktuell gewählte Volltonfarbe
                     }
 
-                    // Renderer-Konfigurationen sammeln
+                    // 5. Renderer-Konfigurationen sammeln
                     const exportedRendererConfig = {
                         shadowMap: {
                             enabled: this.#renderer.shadowMap.enabled,
@@ -1688,7 +1690,48 @@ class World {
                         }
                     }
 
-                    // Gesamtkonfiguration erstellen
+                    // 6. GroundPlane-Config für Exort 
+                    // Wir nehmen die aktuelle Konfiguration direkt aus this.#groundPlaneConfig
+                    const exportedGroundPlaneConfig = JSON.parse(JSON.stringify(this.#groundPlaneConfig))
+
+                    // Stelle sicher, dass es als sceneItem mit type 'plane' identifiziert wird, 
+                    // falls es nicht schon so ist (sollte es aber durch unsere Initialisierung sein).
+                    exportedGroundPlaneConfig.type = 'plane'
+
+                    // --- Szene-Items für den Export zusammenstellen ---
+                    // Wir wollen die *ursprünglichen* anderen SceneItems behalten, 
+                    // aber die spezielle Bodenplatte durch ihre aktuelle Konfiguration ersetzen
+                    // oder hinzufügen, falls sie in den Original-Items nicht explizit als steuerbare Plane drin war. 
+
+                    let finalSceneItems = []
+                    let groundPlaneConfigInOriginal = false
+                    this.#originalSceneItemConfigs.forEach(item => {
+                        if (item.type === 'plane' && item.name ===this.#groundPlaneConfig.name) {
+                            // Dies ist die ursprüngliche Konfiguration der steuerbaren Bodenplatte.
+                            // Wir ersetzen sie durch die aktuelle Konfiguration.
+                            finalSceneItems.push(exportedGroundPlaneConfig)
+                            groundPlaneConfigInOriginal = true
+                        } else {
+                            // Behalte andere Original-Items bei
+                            finalSceneItems.push(item)
+                        }
+                    })
+
+                    if (!groundPlaneConfigInOriginal && this.#groundPlaneConfig.shape !== 'none') {
+                        // Wenn die steuerbare Bodenplatte nicht in den originalen Items war 
+                        // (z.B. weil sie als Default erstellt wurde) und sie sichtbar ist, füge sie hinzu. 
+                        // Wenn shape 'none' ist, aber ursprünglich keine Plane da war, fügen wie sie sie auch nicht als 'none' hinzu, 
+                        // es sei denn, das ist gewünscht. Für einen sauberen Export der den aktuellen Zustand widerspiegelt, 
+                        // wäre es besser, auch 'shape: none' zu exportieren, wenn die config so ist. 
+                        finalSceneItems.push(exportedGroundPlaneConfig) // Fügt auch 'shape: none' hinzu, was korrekt ist.
+                    } else if (!groundPlaneConfigInOriginal && this.#groundPlaneConfig.shape === 'none') {
+                        // Wenn die Default-Plane 'none' ist und nie eine andere Plane konfiguriert wurde, 
+                        // könnten wir hier hier entcheiden, kein Plane-Item zu exportieren oder eines mit shape: 'none'.
+                        // Für Konsistenz: 
+                        finalSceneItems.push(exportedGroundPlaneConfig)
+                    }
+
+                    // 7. Gesamtkonfiguration erstellen
                     const fullConfig = {
                         cameraConfig: currentCameraConfig, 
                         lightSettings: exportedLightSettings, // Füge die Light-Settings hinzu
@@ -1696,7 +1739,7 @@ class World {
                         ...(Object.keys(exportedEnvMapSettings).length > 0 && { environmentMap: exportedEnvMapSettings }), 
                         backgroundSettings: exportedBackgroundSettings, 
                         rendererConfig: exportedRendererConfig, 
-                        sceneItems: this.#originalSceneItemConfigs
+                        sceneItems: finalSceneItems // berücksichtigt die Plane-Settings
                     }
 
                     const jsonConfig = JSON.stringify(fullConfig, null, 2)
