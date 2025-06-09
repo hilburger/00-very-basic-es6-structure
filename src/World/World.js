@@ -1,4 +1,4 @@
-// src/World/World.js 22:59
+// src/World/World.js 16:29
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -171,6 +171,9 @@ class World {
                 },
                 segments: configuredPlaneFromSceneItems.segments ?? 32,
                 color: configuredPlaneFromSceneItems.color || 'darkgrey',
+                mapUrl: configuredPlaneFromSceneItems.mapUrl || null, // URL zur Textur
+                roughness: configuredPlaneFromSceneItems.roughness ?? 0.5, 
+                metalness: configuredPlaneFromSceneItems.metalness ?? 0.5, 
                 receiveShadow: configuredPlaneFromSceneItems.receiveShadow !== undefined ? configuredPlaneFromSceneItems.receiveShadow : true,
                 castShadow: configuredPlaneFromSceneItems.castShadow !== undefined ? configuredPlaneFromSceneItems.castShadow : false,
                 // Behalte original Position/Rotation/Scale bei 
@@ -189,6 +192,9 @@ class World {
                 size: { width: 10, height: 10, radius: 5 }, 
                 segments: 32, 
                 color: 'darkgrey', 
+                mapUrl: null,
+                roughness: 0.5, 
+                metalness: 0.5, 
                 receiveShadow: true, 
                 castShadow: false, 
                 position: { x: 0, y: 0, z: 0 }, 
@@ -1481,7 +1487,7 @@ class World {
                         // Wenn die Plane existiert, Farbe direkt aktualisieren
                         if (this.#groundPlane && this.#groundPlane.material && this.#groundPlane.material.color) {
                             this.#groundPlane.material.color.set(value)
-                        } else if (this.#groundPlaneConfig.shape !== none && !this.#groundPlane) {
+                        } else if (this.#groundPlaneConfig.shape !== 'none' && !this.#groundPlane) {
                             // Falls Plane nicht existiert, aber sichtbar sein soll, neu erstellen/aktualisieren
                             this.#updateGroundPlaneInstance(instanceIdLog)
                         }
