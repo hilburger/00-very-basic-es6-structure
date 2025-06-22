@@ -1,4 +1,4 @@
-// src/World/World.js 16:29
+// src/World/World.js 21:50
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -80,7 +80,7 @@ class World {
     #environmentMapUrl // URL aus der Config
     #environmentMapProcessed = null // Die prozessierte Environment Map Textur
     #environmentMapIntensity = 1.0 // Default Intensity
-    #environmentMapRotationY = 0.0 // Default roration in Radiant
+    #environmentMapRotationY = 0.0 // Default rotation in Radiant
     #pmremGenerator = null // PMREMGenereator Instanz
     #rendererShadowMapTypeFromConfig
     #rendererShadowMapEnabledFromConfig
@@ -180,7 +180,7 @@ class World {
                 position: configuredPlaneFromSceneItems.position || { x: 0, y: 0, z: 0 },
                 // Die Plane.js setzt ihre eigene X-Rotation. Diese hier wäre ein Override. 
                 // Für den Start lassen wir es einfach, die Plane-Klasse rotiert sich selbst flach. 
-                rotation: configuredPlaneFromSceneItems.rotation || { x: 0, y: 0, z: 0 },
+                rotation: configuredPlaneFromSceneItems.rotation,
                 scale: configuredPlaneFromSceneItems.scale || { x: 1, y: 1, z: 1 }
             }
             console.log(`[World${instanceIdLog}] GroundPlane-Konfiguration aus sceneItems geladen:`, JSON.parse(JSON.stringify(this.#groundPlaneConfig)))
@@ -628,7 +628,7 @@ class World {
         return camera
     }
 
-    #updateGroundPlaneInstance(instanceIdLogParam) {
+    async #updateGroundPlaneInstance(instanceIdLogParam) {
         const instanceIdLog = instanceIdLogParam || ` Instance ${this.#instanceId} (${this.#container.id})`
 
         const config = this.#groundPlaneConfig // Die aktuelle WUnschkonfiguration
@@ -652,21 +652,47 @@ class World {
             return
         }
 
+        // Textur laden und Konfiguration für Plane-Klasse vorbereiten START ---
+        let planeTexture = null
+        if (config.mapUrl && typeof config.mapUrl === 'string') {
+            try {
+                // Lade die Textur asynchron mit dem LoadingManager
+                planeTexture = await loadTexture(config.mapUrl, this.#loadingManager)
+                console.log(`[World${instanceIdLog}] Textur für GroundPlane geladen: ${config.mapUrl}`)
+            } catch (error) {
+                console.error(`[World${instanceIdLog}] Fehler beim Laden der GroundPlane-Textur: ${config.mapUrl}`, error)
+                planeTexture = null // Sicherstellen, dass bei Fehler keine Textur verwendet wird
+            }
+        }
+
+        // Erstelle eine Konfiguration, die an die Plane-Klasse übergeben wird. 
+        // Diese enthält das geladene Testur-Objekt (map) anstelle der URL (mapUrl)
+        const configForPlaneClass = {
+            ...config, // Übernimm alle Eigenschaften wir shape, size, color etc. 
+            map: planeTexture // Füge die geladene Textur als 'map' hinzu
+        }
+        // Textur laden und Konfiguration für Plane-Klasse vorbereiten END ---
+
+
         // Fall 2: Die Plane soll sichtbar sein ('rectangle' oder ''circle)
         // Hier gehen wir davo aus, dass this.#groundPlaneConfig die vollen Attribute ernthält (pos, tor, scale etc.)
         if (!this.#groundPlane) {
             // Es gibt keine Plane, aber es soll eine geben -> neu erstellen
             console.log(`[World${instanceIdLog}] Erstelle neue GroundPlane. Config: `, JSON.parse(JSON.stringify(config)))
-            this.#groundPlane = new Plane(config) // Plane-Constructor nutzt shape, size, color etc. aus der config
-            // Position, Rotation, Skalierung aus der #groundPlaneConfig anwenden
+            
+            // 1.: Plane mit allen internen Eigenschaften (Form, Material) erstellen
+            this.#groundPlane = new Plane(configForPlaneClass) // Plane-Constructor nutzt shape, size, color etc. aus der config
+            
+            // 2.: Plane in der Szene Platzieren und 
+                // Position, Rotation, Skalierung aus der #groundPlaneConfig anwenden. 
+                // Bleibt Aufgabe von World.js
             // Die Plane-Klasse rotiert sich intern schon flach. Diese Werte hier sind Overrides/Zusätze.
             this.#groundPlane.position.set(config.position.x, config.position.y, config.position.z)
-            this.#groundPlane.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z) // Vorsicht mit X-Rotation hier vs. Plane-intern
-            this.#groundPlane.scale.set(config.scale.x, config.scale.y, config.scale.z)
-            // Explizit noch einmal die X-Rotation der Plane-Klasse anwenden, falls nicht in der config.rotation.x definiert
-            if (config.rotation.x === 0 && this.#groundPlane.rotation.x !== -Math.PI * 0.5) {
-                this.#groundPlane.rotation.x = -Math.PI * 0.5
+            if (config.rotation) {
+                //this.#groundPlane.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z) // Vorsicht mit X-Rotation hier vs. Plane-intern
+                Object.assign(this.#groundPlane.rotation, config.rotation)
             }
+            this.#groundPlane.scale.set(config.scale.x, config.scale.y, config.scale.z)
 
             this.#scene.add(this.#groundPlane)
             // Füge zur Framing-Liste hinzu (muss hier zugänglich sein, ggf. als Parameter übergeben oder als Instandvariable)
@@ -675,21 +701,25 @@ class World {
         } else {
             // Es gibt bereits eine Plane -> aktualisiere sie
             console.log(`[World${instanceIdLog}] Aktualisiere bestehende GroundPlane. Config:`, JSON.parse(JSON.stringify(config)))
-            this.#groundPlane.updatePlane(config) // updatePlane kümmert sich um shape, size
-            // Materialeigenschaften (color) werden von updatePlane noch nicht behandelt, das müssen wir erweitern oder hier setzen.
-            if (this.#groundPlane.material && this.#groundPlane.material.color) {
-                this.#groundPlane.material.color.set(config.color)
-            }
-            this.#groundPlane.name = config.name
-            this.#groundPlane.receiveShadow = config.receiveShadow
-            this.#groundPlane.castShadow = config.castShadow
+            
+            // 1.: Interne Eigenschaften der Plane (Form, Metarial) über die Methode aktualisieren. 
+            //  Diese Zeile ersetzt viele manuelle Zuweisungen
+            this.#groundPlane.updatePlane(configForPlaneClass) // updatePlane kümmert sich um shape, size
+
+            // 2.: Platzierung in der Szene aktualisieren. 
+            //  Auch dies bleibt Aufgabe von World.js
+
             // Position, Rotation, Skalierung aktualisieren
             this.#groundPlane.position.set(config.position.x, config.position.y, config.position.z)
-            this.#groundPlane.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z) // Vorsicht mit X-Rotation
-            this.#groundPlane.scale.set(config.scale.x, config.scale.y, config.scale.z)
-            if (config.rotation.x === 0 && this.#groundPlane.rotation.x !== -Math.PI * 0.5) {
-                this.#groundPlane.rotation.x = -Math.PI * 0.5
+            if (config.rotation) {
+                //this.#groundPlane.rotation.set(config.rotation.x, config.rotation.y, config.rotation.z) // Vorsicht mit X-Rotation
+                Object.assign(this.#groundPlane.rotation, config.rotation)
             }
+            this.#groundPlane.scale.set(config.scale.x, config.scale.y, config.scale.z)
+            // Weg: 
+            // if (config.rotation.x === 0 && this.#groundPlane.rotation.x !== -Math.PI * 0.5) {
+            //     this.#groundPlane.rotation.x = -Math.PI * 0.5
+            // }
 
             console.log(`[World${instanceIdLog}] GroundPlane '${this.#groundPlane.name}' aktualisiert.`)
         }
@@ -848,7 +878,7 @@ class World {
         this.#updateBackgroundAppearance(instanceIdLog)
     }
 
-    #applyEnvironmentMapSettings(instanceIdLogPassed) { // instanceIdLogPassed, um Konflikt zu vermeiden, falls nicht immer von von einer Methode mit instanceIDLog aufgerufen
+    #applyEnvironmentMapSettings(instanceIdLogPassed) { // instanceIdLogPassed, um Konflikt zu vermeiden, falls nicht immer von von einer Methode mit instanceIdLog aufgerufen
         const instanceIdLog = instanceIdLogPassed || ` Instance ${this.#instanceId} (${this.#container?.id || '?'})`
 
         if (this.#scene && this.#environmentMapProcessed) {
@@ -1449,6 +1479,11 @@ class World {
                 const planeFolder = this.#gui.addFolder('Bodenplatte')
                 planeFolder.close()
 
+                // Definiere den "smarten Default" aus Plane.js hier als Basis
+                const defaultPlaneRotation = { x: - Math.PI * 0.5, y:0, z:0 } 
+                // Merge den Default mit der (möglicherweise nur teilweisen) angelieferten Config
+                const initialGuiRotation = { ...defaultPlaneRotation, ...(this.#groundPlaneConfig.rotation || {}) }
+
                 // Temporäre Objekte für GUI-Bindung, falls direktes Binding Probleme macht oder wir Stringwerte brauchen
                 const planeGuiProxy = {
                     shape: this.#groundPlaneConfig.shape, 
@@ -1460,9 +1495,9 @@ class World {
                     positionX: this.#groundPlaneConfig.position.x,
                     positionY: this.#groundPlaneConfig.position.y,
                     positionZ: this.#groundPlaneConfig.position.z,
-                    rotationX: this.#groundPlaneConfig.rotation.x, // X-Rotation auch, falls man sie doch mal braucht
-                    rotationY: this.#groundPlaneConfig.rotation.y,
-                    rotationZ: this.#groundPlaneConfig.rotation.z,
+                    rotationX: initialGuiRotation.x,
+                    rotationY: initialGuiRotation.y,
+                    rotationZ: initialGuiRotation.z,
                     scaleX: this.#groundPlaneConfig.scale.x,
                     scaleY: this.#groundPlaneConfig.scale.y,
                     scaleZ: this.#groundPlaneConfig.scale.z,
@@ -1470,30 +1505,54 @@ class World {
                     castShadow: this.#groundPlaneConfig.castShadow
                 }
 
-                // Controller für Form (Dropdown)
+                // --- Controller für Form (Dropdown) ---
                 const shapeController = planeFolder.add(planeGuiProxy, 'shape', ['rectangle', 'circle', 'none'])
                     .name('Form')
-                    .onChange(value => {
+                    .onChange(async (value) => {
                         this.#groundPlaneConfig.shape = value
-                        this.#updateGroundPlaneInstance(instanceIdLog)
+                        await this.#updateGroundPlaneInstance(instanceIdLog)
                         updatePlaneDimensionControllerVisibility() // Sichtbarkeit der Dimensionsregler anpassen
                     })
                 
-                // Controller für Farbe
+                // --- Controller für Farbe ---
                 planeFolder.addColor(planeGuiProxy, 'color')
                     .name('Farbe')
-                    .onChange(value => {
+                    .onChange(async (value) => {
                         this.#groundPlaneConfig.color = value
                         // Wenn die Plane existiert, Farbe direkt aktualisieren
-                        if (this.#groundPlane && this.#groundPlane.material && this.#groundPlane.material.color) {
-                            this.#groundPlane.material.color.set(value)
-                        } else if (this.#groundPlaneConfig.shape !== 'none' && !this.#groundPlane) {
-                            // Falls Plane nicht existiert, aber sichtbar sein soll, neu erstellen/aktualisieren
-                            this.#updateGroundPlaneInstance(instanceIdLog)
-                        }
+                        await this.#updateGroundPlaneInstance(instanceIdLog)
                     })
 
-                // Platzhalter für Dimensions-Controller
+                // --- Controller für Materialeigenschaften ---
+                const materialFolder = planeFolder.addFolder('Material')
+
+                // Proxy mit neuen Werte aktualisieren
+                planeGuiProxy.mapUrl = this.#groundPlaneConfig.mapUrl || '' // Textfeld mag kein null
+                planeGuiProxy.roughness = this.#groundPlaneConfig.roughness
+                planeGuiProxy.metalness = this.#groundPlaneConfig.metalness
+                
+                materialFolder.add(planeGuiProxy, 'mapUrl')
+                    .name('Textur-URL') 
+                    .onFinishChange(async (value) => { // onFinishChange ist für Textfelder besser
+                        this.#groundPlaneConfig.mapUrl = value.trim() || null // Leeren String als null speichern
+                        await this.#updateGroundPlaneInstance(instanceIdLog)
+                    })
+                
+                materialFolder.add(planeGuiProxy, 'roughness', 0, 1, 0.01)
+                    .name('Roughness')
+                    .onChange(async (value) => {
+                        this.#groundPlaneConfig.roughness = value
+                        await this.#updateGroundPlaneInstance(instanceIdLog)
+                    })
+
+                materialFolder.add(planeGuiProxy, 'metalness', 0, 1, 0.01)
+                    .name('Metalness')
+                    .onChange(async (value) => {
+                        this.#groundPlaneConfig.metalness = value
+                        await this.#updateGroundPlaneInstance(instanceIdLog)
+                    })
+                
+                // --- Platzhalter für Dimensions-Controller ---
                 let widthController, heightController, radiusController, segmentsController
 
                 const dimFolder = planeFolder.addFolder('Dimensionen')
@@ -1501,34 +1560,34 @@ class World {
 
                 widthController = dimFolder.add(planeGuiProxy, 'width', 0.1, 100, 0.1)
                     .name('Breite (Rechteck)')
-                    .onChange(value => {
+                    .onChange(async (value) => {
                         this.#groundPlaneConfig.size.width = value
                         if (this.#groundPlaneConfig.shape === 'rectangle') {
-                            this.#updateGroundPlaneInstance(instanceIdLog)
+                            await this.#updateGroundPlaneInstance(instanceIdLog)
                         }
                     })
 
                 heightController = dimFolder.add(planeGuiProxy, 'height', 0.1, 100, 0.1)
                     .name('Höhe/Tiefe (Rechteck)')
-                    .onChange(value => {
+                    .onChange(async (value) => {
                         this.#groundPlaneConfig.size.height = value
                         if (this.#groundPlaneConfig.shape === 'rectangle') {
-                            this.#updateGroundPlaneInstance(instanceIdLog)
+                            await this.#updateGroundPlaneInstance(instanceIdLog)
                         }
                     })
 
                 radiusController = dimFolder.add(planeGuiProxy, 'radius', 0.1, 50, 0.1)
                     .name('Radius (Kreis)')
-                    .onChange(value => {
+                    .onChange(async (value) => {
                         this.#groundPlaneConfig.size.radius = value
                         if (this.#groundPlaneConfig.shape === 'circle') {
-                            this.#updateGroundPlaneInstance(instanceIdLog)
+                            await this.#updateGroundPlaneInstance(instanceIdLog)
                         }
                     })
 
                 segmentsController = dimFolder.add(planeGuiProxy, 'segments', 3, 64, 1)
                     .name('Segmente (Kreis)')
-                    .onChange(value => {
+                    .onChange(async (value) => {
                         this.#groundPlaneConfig.segments = value
                         if (this.#groundPlaneConfig.shape === 'circle') {
                             this.#updateGroundPlaneInstance(instanceIdLog)
@@ -1553,42 +1612,54 @@ class World {
 
                 const posFolder = transformFolder.addFolder('Position')
                 posFolder.add(planeGuiProxy, 'positionX', -50, 50, 0.1).name('X').listen()
-                    .onChange(v => {this.#groundPlaneConfig.position.x = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => {this.#groundPlaneConfig.position.x = v; await this.#updateGroundPlaneInstance(instanceIdLog) })
                 posFolder.add(planeGuiProxy, 'positionY', -50, 50, 0.1).name('Y').listen()
-                    .onChange(v => {this.#groundPlaneConfig.position.y = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => {this.#groundPlaneConfig.position.y = v; await this.#updateGroundPlaneInstance(instanceIdLog) })
                 posFolder.add(planeGuiProxy, 'positionZ', -50, 50, 0.1).name('Z').listen()
-                    .onChange(v => {this.#groundPlaneConfig.position.z = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => {this.#groundPlaneConfig.position.z = v; await this.#updateGroundPlaneInstance(instanceIdLog) })
                 posFolder.close()
 
                 const rotFolder = transformFolder.addFolder('Rotation (Radiant)')
                 rotFolder.add(planeGuiProxy, 'rotationX', -Math.PI, Math.PI, 0.01).name('X').listen()
-                    .onChange(v => { this.#groundPlaneConfig.rotation.x = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => { 
+                        if (!this.#groundPlaneConfig.rotation) { this.#groundPlaneConfig.rotation = {} }
+                        this.#groundPlaneConfig.rotation.x = v
+                        await this.#updateGroundPlaneInstance(instanceIdLog) 
+                    })
                 rotFolder.add(planeGuiProxy, 'rotationY', -Math.PI, Math.PI, 0.01).name('Y').listen()
-                    .onChange(v => { this.#groundPlaneConfig.rotation.y = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => { 
+                        if (!this.#groundPlaneConfig.rotation) { this.#groundPlaneConfig.rotation = {} }
+                        this.#groundPlaneConfig.rotation.y = v 
+                        await this.#updateGroundPlaneInstance(instanceIdLog) 
+                    })
                 rotFolder.add(planeGuiProxy, 'rotationZ', -Math.PI, Math.PI, 0.01).name('Z').listen()
-                    .onChange(v => { this.#groundPlaneConfig.rotation.z = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => { 
+                        if (!this.#groundPlaneConfig.rotation) { this.#groundPlaneConfig.rotation = {} }
+                        this.#groundPlaneConfig.rotation.z = v
+                        await this.#updateGroundPlaneInstance(instanceIdLog) 
+                    })
                 rotFolder.close()
 
                 const scaleFolder = transformFolder.addFolder('Skalierung')
                 scaleFolder.add(planeGuiProxy, 'scaleX', 0.1, 10, 0.01).name('X').listen()
-                    .onChange(v => { this.#groundPlaneConfig.scale.x = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => { this.#groundPlaneConfig.scale.x = v; await this.#updateGroundPlaneInstance(instanceIdLog) })
                 scaleFolder.add(planeGuiProxy, 'scaleY', 0.1, 10, 0.01).name('Y').listen()
-                    .onChange(v => { this.#groundPlaneConfig.scale.y = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => { this.#groundPlaneConfig.scale.y = v; await this.#updateGroundPlaneInstance(instanceIdLog) })
                 scaleFolder.add(planeGuiProxy, 'scaleZ', 0.1, 10, 0.01).name('Z').listen()
-                    .onChange(v => { this.#groundPlaneConfig.scale.z = v; this.#updateGroundPlaneInstance(instanceIdLog) })
+                    .onChange(async (v) => { this.#groundPlaneConfig.scale.z = v; await this.#updateGroundPlaneInstance(instanceIdLog) })
                 scaleFolder.close()
 
                 // --- Schatten für Bodenplatte ---
                 const shadowFolder = planeFolder.addFolder('Schatten')
                 shadowFolder.add(planeGuiProxy, 'receiveShadow').name('Empfängt Schatten')
-                    .onChange(v => { 
+                    .onChange(async (v) => { 
                         this.#groundPlaneConfig.receiveShadow = v 
-                        this.#updateGroundPlaneInstance(instanceIdLog) 
+                        await this.#updateGroundPlaneInstance(instanceIdLog) 
                     })
                 shadowFolder.add(planeGuiProxy, 'castShadow').name('Wirft Schatten')
-                    .onChange(v => {
+                    .onChange(async (v) => {
                         this.#groundPlaneConfig.castShadow = v
-                        this.#updateGroundPlaneInstance(instanceIdLog)
+                        await this.#updateGroundPlaneInstance(instanceIdLog)
                     })
             }
             // --- ENDE GUI Bodenplatte ---
@@ -1813,7 +1884,7 @@ class World {
         console.log(`[World${instanceIdLog}] Pointerdown Listener hinzugefügt.`)
     }
 
-    #handlePointerDown(event) { // instanceIDLog ist hier nicht direkt verfügbar, holen wir aus this.#instanceIdLog
+    #handlePointerDown(event) { // instanceIdLog ist hier nicht direkt verfügbar, holen wir aus this.#instanceIdLog
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})`
 
         // 1. Mauskoordination berechnen (normalisiert: -1 bis +1)
@@ -2035,7 +2106,7 @@ class World {
         // --- Bodenpplatte aktualisieren
         // Rufe Methode #updateGroundPlaneInstance auf, um die Bodenplatte basierend auf #groundPlaneConfig zu handhaben
         // this.#groundPlane wird innerhalb dieser Methode gesetzt oder auf null. 
-        this.#updateGroundPlaneInstance(instanceIdLog)
+        await this.#updateGroundPlaneInstance(instanceIdLog)
 
         // Wenn die Bodenplatte (das Mesh this.#groundPlane) nach dem Aufruf von #updateGroundPlaneInstance existiert, 
         // füge sie zur lokalen Framing-Liste hinzu

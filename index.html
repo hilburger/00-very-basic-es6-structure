@@ -1,4 +1,4 @@
-<!-- 22:59 -->
+<!-- 21:50 -->
 <!DOCTYPE html>
 <html lang="de">
 
@@ -16,93 +16,159 @@
 
     <div class="grid-container">
         <div class="threejs-viewer-container" 
-             id="viewer-1" data-config='{
-                "cameraConfig": {
-                  "initialPosition": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 2
-                  },
-                  "initialLookAt": {
-                    "x": -0.093,
-                    "y": 0.761,
-                    "z": -0.465
-                  },
-                  "fov": 48,
-                  "disableFramingIfInitialSet": true,
-                  "framingPadding": 1.3,
-                  "near": 0.1,
-                  "far": 100
+            id="viewer-1" data-config='{
+              "cameraConfig": {
+                "initialPosition": {
+                  "x": 1.35,
+                  "y": 2.05,
+                  "z": 3.15
                 },
-                "lightSettings": [
-                  {
-                    "type": "AmbientLight",
-                    "name": "MyConfigAmbient",
-                    "color": "#fd1212",
-                    "intensity": 2.2,
-                    "castShadow": false,
-                    "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    }
-                  },
-                  {
-                    "type": "DirectionalLight",
-                    "name": "MyConfigDirectional",
-                    "color": "#ffeedd",
-                    "intensity": 1.2,
-                    "castShadow": true,
-                    "position": {
-                      "x": 5,
-                      "y": 8,
-                      "z": 3
-                    },
-                    "targetPosition": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    }
-                  }
-                ],
-                "environmentMap": {
-                  "url": "./textures/environment/blue_photo_studio_1k.hdr",
-                  "intensity": 1.5,
-                  "rotationY": 0
+                "initialLookAt": {
+                  "x": 0.87,
+                  "y": 0.94,
+                  "z": -0.39
                 },
-                "backgroundSettings": {
-                  "useEnvironmentMapAsBackground": true,
-                  "color": "#222233"
-                },
-                "rendererConfig": {
-                  "shadowMap": {
-                    "enabled": true,
-                    "type": 2
+                "fov": 48,
+                "disableFramingIfInitialSet": true,
+                "framingPadding": 1.3,
+                "near": 0.1,
+                "far": 100
+              },
+              "lightSettings": [
+                {
+                  "type": "AmbientLight",
+                  "name": "MyConfigAmbient",
+                  "color": "#fd1212",
+                  "intensity": 2.2,
+                  "castShadow": false,
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
                   }
                 },
-                "sceneItems": [
-                    {
-                        "type": "gltf", 
-                        "name": "Löwe 1k", 
-                        "assetUrl": "./models/lion_head_1k/lion_head_1k.gltf",
-                        "position": { "x": -1, "y": 0, "z": 0 },
-                        "rotation": { "x": 0, "y": -0.5, "z": 0 },
-                        "scale": { "x": 4, "y": 4, "z": 4 },
-                        "castShadow": true, 
-                        "receiveShadow": true
-                    },
-                    {
-                        "type": "gltf", 
-                        "name": "Ente", 
-                        "assetUrl": "./models/duck/gltf/Duck.gltf",
-                        "position": { "x": 1, "y": 0, "z": 0 },
-                        "rotation": { "x": 0, "y": -0.5, "z": 0 },
-                        "scale": { "x": 1, "y": 1, "z": 1 },
-                        "castShadow": true, 
-                        "receiveShadow": true
-                    }
-                ]
-             }'><!-- Am Ende könnten "cameraConfig": {...}, "lightConfig": [...] stehen -->
+                {
+                  "type": "DirectionalLight",
+                  "name": "MyConfigDirectional",
+                  "color": "#ffeedd",
+                  "intensity": 1.2,
+                  "castShadow": true,
+                  "position": {
+                    "x": 5,
+                    "y": 8,
+                    "z": 3
+                  },
+                  "targetPosition": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "shadowParameters": {
+                    "mapSize": 1024,
+                    "cameraNear": 0.5,
+                    "cameraFar": 50,
+                    "bias": -0.001,
+                    "radius": 1,
+                    "cameraLeft": -10,
+                    "cameraRight": 10,
+                    "cameraTop": 10,
+                    "cameraBottom": -10
+                  }
+                }
+              ],
+              "environmentMap": {
+                "url": "./textures/environment/blue_photo_studio_1k.hdr",
+                "intensity": 1.5,
+                "rotationY": 0
+              },
+              "backgroundSettings": {
+                "useEnvironmentMapAsBackground": true,
+                "color": "#222233"
+              },
+              "rendererConfig": {
+                "shadowMap": {
+                  "enabled": true,
+                  "type": 2
+                }
+              },
+              "sceneItems": [
+                {
+                  "type": "gltf",
+                  "name": "Löwe 1k",
+                  "assetUrl": "./models/lion_head_1k/lion_head_1k.gltf",
+                  "position": {
+                    "x": -1,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "scale": {
+                    "x": 4,
+                    "y": 4,
+                    "z": 4
+                  },
+                  "castShadow": true,
+                  "receiveShadow": true
+                },
+                {
+                  "type": "gltf",
+                  "name": "Ente",
+                  "assetUrl": "./models/duck/gltf/Duck.gltf",
+                  "position": {
+                    "x": 1,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "rotation": {
+                    "x": 0,
+                    "y": -0.5,
+                    "z": 0
+                  },
+                  "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                  },
+                  "castShadow": true,
+                  "receiveShadow": true
+                },
+                {
+                  "type": "plane",
+                  "name": "GroundPlane_Default",
+                  "shape": "circle",
+                  "size": {
+                    "width": 10,
+                    "height": 10,
+                    "radius": 5
+                  },
+                  "segments": 32,
+                  "color": "darkgrey",
+                  "mapUrl": "./textures/uv_grid_opengl_1k.webp",
+                  "roughness": 0.5,
+                  "metalness": 0.5,
+                  "receiveShadow": true,
+                  "castShadow": false,
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "rotation": {
+                    "y": 0,
+                    "z": 0.498407346410207
+                  },
+                  "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                  }
+                }
+              ]
+            }'><!-- Am Ende könnten "cameraConfig": {...}, "lightConfig": [...] stehen -->
         </div>
 
         <div class="grid-item">
@@ -300,7 +366,6 @@
                       "z": 0
                     },
                     "rotation": {
-                      "x": 1.81840734641021,
                       "y": -0.151592653589793,
                       "z": -0.00159265358979299
                     },

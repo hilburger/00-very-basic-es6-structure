@@ -1,4 +1,4 @@
-// src/World/components/Plane.js 16:23
+// src/World/components/Plane.js 21:50
 import {
     PlaneGeometry,
     CircleGeometry,
@@ -57,26 +57,24 @@ class Plane extends Mesh { // Erbt von THREE.Mesh
             },
         }
 
-        // Stelle sicher, dass color ein THREE.Color Objekt ist, falls es als String kommt
-        // mergedConfig.color = new Color(mergedConfig.color) // Wird direkt im Material gemacht
-
-        this.#currentConfig = mergedConfig // Speichere die gemergte Konfiguration 
-
         // 2. Geometry und Material erstellen
-        const geometry = Plane._createGeometry(this.#currentConfig)
+        const geometry = Plane._createGeometry(mergedConfig)
 
-        // 3. Material erstellen mit den neuen PBR-Eigenschaften
+        // Material erstellen mit den neuen PBR-Eigenschaften
         const material = new MeshStandardMaterial({
-            color: this.#currentConfig.color, 
-            map: this.#currentConfig.map, 
-            roughness: this.#currentConfig.roughness, 
-            metalness: this.#currentConfig.metalness, 
+            color: mergedConfig.color, 
+            map: mergedConfig.map, 
+            roughness: mergedConfig.roughness, 
+            metalness: mergedConfig.metalness, 
             side: DoubleSide // Wichtig, damit man sie auch von unten sieht
         })
 
-        // 4. super() aufrufen (Konstruktor der Basisklasse THREE.Mesh)
+        // 3. super() aufrufen (Konstruktor der Basisklasse THREE.Mesh)
         // Muss VOR dem ersten Zugriff auf 'this' geschehen
         super(geometry, material)
+
+        // 4. Setze die Eigenschaften
+        this.#currentConfig = mergedConfig // Speichere die gemergte Konfiguration 
 
         // 5. Name und Schatten setzen
         this.name = this.#currentConfig.name
