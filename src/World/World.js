@@ -1,4 +1,4 @@
-// src/World/World.js 21:50
+// src/World/World.js 13:54
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -419,10 +419,13 @@ class World {
                             this.#scene.add(targetObject)
                             light.target = targetObject
                         }
-                        helper = new DirectionalLightHelper(light, 1) // 1 ist die Größe des Helpers
-                        helper.name = `{$light.name}_Helper`
-                        light.userData.helper = helper // Helper am Licht speichern
-                        this.#scene.add(helper)
+                        if (this.#isDebugMode) {
+                            helper = new DirectionalLightHelper(light, 1) // 1 ist die Größe des Helpers
+                            helper.name = `{$light.name}_Helper`
+                            light.userData.helper = helper // Helper am Licht speichern
+                            this.#scene.add(helper)
+                        }
+                        
 
                         // --- Schatteneinstellungen für DirectionalLight ---
                         if (lightConfig.castShadow === true) {
@@ -494,10 +497,13 @@ class World {
                                 lightConfig.position.z || 0
                             )
                         }
-                        helper = new PointLightHelper(light, 0.5) // 0.5 ist die Größe des Helpers
-                        helper.name = `${light.name}_Helper`
-                        light.userData.helper = helper
-                        this.#scene.add(helper)
+                        if (this.#isDebugMode) {
+                            helper = new PointLightHelper(light, 0.5) // 0.5 ist die Größe des Helpers
+                            helper.name = `${light.name}_Helper`
+                            light.userData.helper = helper
+                            this.#scene.add(helper)
+                        }
+                        
 
                         // Schatten
                         if (lightConfig.castShadow === true) {
