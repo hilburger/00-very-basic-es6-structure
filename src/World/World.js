@@ -91,12 +91,14 @@ class World {
     #groundPlane = null // Instanzvariable für die Referenz zur konfigurierbaren Bodenplatte
     #groundPlaneConfig = null
     #originalSceneItemConfigs = [] // Für die ursprünglichen sceneItems aus der Config
+    #assetBaseUrl
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
-    constructor(container, mainConfig, isDebugMode = false, instanceId) {
+    constructor(container, mainConfig, isDebugMode = false, instanceId, assetBaseUrl) {
         this.#container = container // Container für diese Instanz speichern
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
+        this.#assetBaseUrl = assetBaseUrl // Basis-URL zu den in der JSON-Config angegebenen Assets/Foldern
 
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
@@ -591,7 +593,7 @@ class World {
                     light.shadow.bias = - 0.001
                 }
 
-                if (helper) {
+                if (helper && this.#isDebugMode) {
                     helper.name = `${light.name}_Helper`
                     light.userData.helper = helper
                     this.#scene.add(helper)
@@ -637,7 +639,7 @@ class World {
     async #updateGroundPlaneInstance(instanceIdLogParam) {
         const instanceIdLog = instanceIdLogParam || ` Instance ${this.#instanceId} (${this.#container.id})`
 
-        const config = this.#groundPlaneConfig // Die aktuelle WUnschkonfiguration
+        const config = this.#groundPlaneConfig // Die aktuelle Wunschkonfiguration
 
         // Fall 1: Plane soll nicht sichtbar sein ('none')
         if (config.shape === 'none') {
@@ -663,7 +665,7 @@ class World {
         if (config.mapUrl && typeof config.mapUrl === 'string') {
             try {
                 // Lade die Textur asynchron mit dem LoadingManager
-                planeTexture = await loadTexture(config.mapUrl, this.#loadingManager)
+                planeTexture = await loadTexture(config.mapUrl, this.#loadingManager, this.#assetBaseUrl)
                 console.log(`[World${instanceIdLog}] Textur für GroundPlane geladen: ${config.mapUrl}`)
             } catch (error) {
                 console.error(`[World${instanceIdLog}] Fehler beim Laden der GroundPlane-Textur: ${config.mapUrl}`, error)
@@ -821,7 +823,7 @@ class World {
         this.#loadingManager.itemStart(loadingManagerKey)
 
         try {
-            const hdrTexture = await loadEnvironmentMap(this.#environmentMapUrl, this.#loadingManager)
+            const hdrTexture = await loadEnvironmentMap(this.#environmentMapUrl, this.#loadingManager, this.#assetBaseUrl)
             hdrTexture.mapping = EquirectangularReflectionMapping // Wichtig für korrekten Projektion
 
             console.log(`[World${instanceIdLog}] Environment Map Textur geladen, starte PMREM-Processing...`)
@@ -1995,7 +1997,7 @@ class World {
                             throw new Error(`Fehlende 'assetUrl' für GLTF-Objekt ${itemConfig.name || ''}`)
                         }
                         // Rufe loadGltf auf und übergebe NUR die URL für DIESES Item
-                        loadedObject = await loadGltf(itemConfig.assetUrl, this.#loadingManager)
+                        loadedObject = await loadGltf(itemConfig.assetUrl, this.#loadingManager, this.#assetBaseUrl)
                         // Namen konsistent setzen
                         loadedObject.name = itemConfig.name || `ConfigGLTF_${loadedSceneObjectsForFraming.length}`
                         console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' (GLTF) geladen.`)

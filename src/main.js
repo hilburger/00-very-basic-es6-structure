@@ -44,6 +44,8 @@ async function main() {
                 continue // Nächsten Container versuchen
             }
 
+            const assetBaseUrl = containerElement.dataset.assetBaseUrl || '' // mit Fallback auf leeren String
+
             let mainConfig = null
             try {
                 mainConfig = JSON.parse(configString) // JSON parsen
@@ -67,7 +69,7 @@ async function main() {
             // World-Instanz für DIESEN Container erstellen
             // WICHTIG: Wir übergeben die Instanz-spezifische Konfiguration (mainConfig)
             // und das Debug-FLag
-            const world = new World(containerElement, mainConfig, isDebugMode, instanceId)
+            const world = new World(containerElement, mainConfig, isDebugMode, instanceId, assetBaseUrl)
 
             // Asynchrone Initialisierung für DIESE Instanz aufrufen
             // Die init-Methode muss angepasst werden, um nur EIN mainConfig zu erwarten!
