@@ -7,9 +7,9 @@ body {
 
 .threejs-viewer-container {
     /* Definiert Größe und Aussehen des 3D-Bereichs */
-    /* width: 100%;*/  /* Breite relativ zur umgebenden Seite */
-    /* max-width: 800px; /* Maximale Breite */
-    height: 400px; /* Feste Höhe */
+    width: 100%;  /* Breite relativ zur umgebenden Seite */
+    /* max-width: 800px; Maximale Breite */
+    height: auto;
     /* Alt: margin: 1em auto; */ /* Zentriert den Container horizontal */
     margin-block: 1em; /* Modernere Schreibweise für oben/unten */
     /* border: 1px solid #ccc; */
@@ -18,7 +18,18 @@ body {
     min-width: 0;
     overflow: hidden; /* Verhindert, dass das Overlay übersteht */
     min-height: 150px; /* Mindesthöhe, damit der Ladebalken sichtbar ist, falls Container initial 0 Höhe hat */
+}
 
+.threejs-viewer-container[data-aspect-ratio='16:9'] {
+    aspect-ratio: 16 / 9;
+}
+
+.threejs-viewer-container[data-aspect-ratio='4:3'] {
+    aspect-ratio: 4 / 3;
+}
+
+.threejs-viewer-container[data-aspect-ratio='1:1'] {
+    aspect-ratio: 1 / 1;
 }
 
 canvas {

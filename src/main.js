@@ -35,6 +35,15 @@ async function main() {
             containerElement.id = `threejs-viewer-${instanceId}`
         }
 
+        // Banner-Höhe aus dataAttribute (von TYPO3) anwenden
+        const aspectRatio = containerElement.dataset.aspectRatio
+        const bannerHeight = containerElement.dataset.bannerHeight
+
+        if (aspectRatio === 'banner' && bannerHeight) {
+            console.log(`[Main ${instanceId}] Setting banner height to: `, bannerHeight)
+            containerElement.style.height = bannerHeight
+        }
+
         try {
             // Konfiguration aus dataAttribut lesen
             const configString = containerElement.dataset.config
