@@ -1934,6 +1934,32 @@ class World {
             console.log(`[World${instanceIdLog}] Raycast hit:`, clickedObject.name || clickedObject.uuid ) // Das tatsächlich getroffene Mesh/etc.
             console.log(`[World${instanceIdLog}] Top-Level Clickable:`, topLevelClickedObject.name || topLevelClickedObject.uuid)
 
+            // Wenn im Debug-Mode, gib technische Details aus: 
+            if (this.#isDebugMode) {
+                let triangleCount = 0
+                // Gehe durch das geklickte Objekt und seine Kinder
+                topLevelClickedObject.traverse(child => {
+                    // Prüfe, ob es ein Mesh mit einer geometrie ist
+                    if (child.isMesh && child.geometry) {
+                        // Eine Geometrie ist "indexed", wenn sie ein .index Attribut hat.
+                        // Dann ist die Anzahl der Triangles = Anzahl der Indizes / 3.
+                        if (child.geometry.index) {
+                            triangleCount += child.geometry.index.count / 3
+                        } else if (child.geometry.attributes.position) {
+                            // Ansonsten (selten) ist die Anzahl der Positionen / 3.
+                            triangleCount += child.geometry.attributes.position.count / 3
+                        }
+                    }
+                })
+                console.log(
+                    `%c[DEBUG INFO]%c
+                    Objekt: ${topLevelClickedObject.name || '(kein Name)'}
+                    Triangles: ${Math.round(triangleCount)}`,
+                    'color: orange; background: black; padding: 2px 5px; border-radius: 3px;',
+                    'color: white;'
+                )
+            }
+
             // 4. Event über den Event Bus senden
             eventBus.emit('objectClicked', {
                 object: topLevelClickedObject, // Das Objekt aus unserer Liste
@@ -2267,20 +2293,23 @@ class World {
                 'color: black;'
             )
 
-            // Beispielhafte Reaktion (Hüpfen) - nutzt eventData.object
+            // Objekt geklickt: Beispielhafte Reaktion (Hüpfen) - nutzt eventData.object
             // Greift NICHT auf this.#... zu
-            if (eventData.object && typeof eventData.object.position?.y === 'number') {
-                const originalY = eventData.object.userData.originalY ?? eventData.object.position.y
-                eventData.object.userData.originalY = originalY // Speichere Originalposition, falls noch nicht geschehen
+            // Hüpfen nur im Debug-Modus
+            if (this.#isDebugMode) {
+                if (eventData.object && typeof eventData.object.position?.y === 'number') {
+                    const originalY = eventData.object.userData.originalY ?? eventData.object.position.y
+                    eventData.object.userData.originalY = originalY // Speichere Originalposition, falls noch nicht geschehen
 
-                // Simple Animation (ohne GSAP hier)
-                const jumpHeight = 0.5
-                eventData.object.position.y = originalY + jumpHeight
-                setTimeout(() => {
-                    if (eventData.object?.position) { // Prüfen ob Objekt noch existiert
-                         eventData.object.position.y = originalY
-                    }
-                }, 300) // Nach 300ms zurücksetzen
+                    // Simple Animation (ohne GSAP hier)
+                    const jumpHeight = 0.5
+                    eventData.object.position.y = originalY + jumpHeight
+                    setTimeout(() => {
+                        if (eventData.object?.position) { // Prüfen ob Objekt noch existiert
+                            eventData.object.position.y = originalY
+                        }
+                    }, 300) // Nach 300ms zurücksetzen
+                }
             }
         } // Ende des Callbacks für 'objectClicked'
 
