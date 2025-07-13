@@ -32,6 +32,10 @@ body {
     aspect-ratio: 1 / 1;
 }
 
+.threejs-viewer-container[data-aspect-ratio='3:4'] {
+    aspect-ratio: 3 / 4;
+}
+
 canvas {
     /* Sorgt dafür, dass das Canvas den Container füllt */
     display: block;
