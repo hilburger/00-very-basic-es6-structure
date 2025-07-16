@@ -1,3 +1,5 @@
+// Timestamp: 12:09
+
 // Importiert die zentrale World-Klasse
 import { World } from './World/World.js'
 
@@ -53,7 +55,7 @@ async function main() {
                 continue // Nächsten Container versuchen
             }
 
-            const assetBaseUrl = containerElement.dataset.assetBaseUrl || '' // mit Fallback auf leeren String
+            const assetBaseUrl = containerElement.dataset.assetBaseUrl || window.location.origin
 
             let mainConfig = null
             try {
