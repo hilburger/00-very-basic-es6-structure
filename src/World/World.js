@@ -1,5 +1,5 @@
 // src/World/World.js 
-// Timestamp: 13:45
+// Timestamp: 15:58
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
