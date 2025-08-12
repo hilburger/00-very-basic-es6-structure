@@ -574,7 +574,7 @@ class World {
             //this.#lights.push(...defaultLightsArray)
             defaultLightsArray.forEach((defaultLight, index) => {
                 
-                let light = defaultLight // Arbeite mit der Kope/Instanz
+                let light = defaultLight // Arbeite mit der Kopie/Instanz
                 let helper = null
                 // Namen setzen, falls vorhanden
                 if (!light.name) {
@@ -592,9 +592,9 @@ class World {
                 if (light.isDirectionalLight || light.isPointLight) {
                     light.castShadow = false // Explizit Schatten für Defaults deaktivieren
                     // Stadard-Schattenparameter für Defaults (auch wenn castShadow false ist - schadet nicht)
-                    light.shadow.mapSize = new Vector2(1024, 1024) // ntze Zuweisung statt set
+                    light.shadow.mapSize = new Vector2(1024, 1024) // nutze Zuweisung statt set
                     light.shadow.camera.near = 0.1
-                    light.shadow.camera.fat = light.distance > 0 ? light.distance : 100
+                    light.shadow.camera.far = light.distance > 0 ? light.distance : 100
                     light.shadow.bias = - 0.001
                 }
 
@@ -793,12 +793,12 @@ class World {
                 renderer.shadowMap.type = PCFSoftShadowMap // Fallback auf Default
             }
         } else {
-            renderer.shadowMap.type = PCFSoftShadowMap // STandard-Type, falls nichts in Config definiert wurde
+            renderer.shadowMap.type = PCFSoftShadowMap // Standard-Type, falls nichts in Config definiert wurde
         }
         
 
         // Größe wird durch Resizer gesetzt, nicht hier
-        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB, ShadowMap Enabled: ${renderer.shadowMap.enabled}, Type: ${renderer.shadowMap.type}`)
+        console.log(`[World${this.#instanceId}] Renderer erstellt mit ToneMapping: ACESFilmic, OutputColorSpace: SRGB, ShadowMap Enabled: ${renderer.shadowMap.enabled} of Type: ${renderer.shadowMap.type}`)
         return renderer
     }
 
@@ -1298,7 +1298,7 @@ class World {
                         // posFolder.open()
                     }
 
-                    // --- Spezifische EIgenschaften für DIrectionalLight ---
+                    // --- Spezifische Eigenschaften für DirectionalLight ---
                     if (light.isDirectionalLight) {
                         // Das Target-Objekt eines DIrectionalLight ist standardmäßig bei (0,0,0) relativ zur Lichtquelle
                         // Wenn wir das Target bewegen wollen, bewegen wir das light.target Objekt.
@@ -2237,8 +2237,8 @@ class World {
             console.log(`[World${instanceIdLog}] Automatisches Kamera-Framing übersprungen aufgrund von initialPosition/initialLookAt und disableFramingIfInitialSet=true.`)
             // Sicherstellen, dass die Kamera auf initialLookAt blickt, falls es gesetzt wurde.
             // Die Position wurde bereits in #createCamera gesetzt.
-            // Das Target wurde bereits im Construczot f+r #controls gesetzt.
-            // Ein #controls.update() ist hier ggf. nicvht nötig, schadet aber auch nicht.
+            // Das Target wurde bereits im Construczot für #controls gesetzt.
+            // Ein #controls.update() ist hier ggf. nicht nötig, schadet aber auch nicht.
             this.#controls.update()
         } else {
             console.log(`[World${instanceIdLog}] Keine Objekte für Kamera-Framing geladen oder initialPosition/LookAt nicht gesetzt.`)
