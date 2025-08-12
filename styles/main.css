@@ -15,7 +15,7 @@ body {
     /* Alt: margin: 1em auto; */ /* Zentriert den Container horizontal */
     margin-block: 1em; /* Modernere Schreibweise für oben/unten */
     /* border: 1px solid #ccc; */
-    background-color: #282c34; /* Hintergrund für den Container */
+    background-color: transparent; /* Hintergrund für den Container */
     position: relative; /* Wichtig für das Canvas-Element und die absolute Positionierung des Loading-Overlays */
     min-width: 0;
     overflow: hidden; /* Verhindert, dass das Overlay übersteht */
