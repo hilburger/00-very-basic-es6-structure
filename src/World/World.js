@@ -95,6 +95,11 @@ class World {
     #groundPlaneConfig = null
     #originalSceneItemConfigs = [] // Für die ursprünglichen sceneItems aus der Config
     #assetBaseUrl
+    #backgroundBlur = 0
+
+    // Orbit Controls (expecially external)
+    #autoRotate = false 
+    #autoRotateSpeed = 1.0
 
     // Der Constructor nimmt den HTML-Container (ein DOM-Element) und die Instanz-ID entgegen
     constructor(container, mainConfig, isDebugMode = false, instanceId, assetBaseUrl) {
@@ -103,6 +108,13 @@ class World {
         this.#isDebugMode = isDebugMode // Speichere den Flag
         this.#instanceId = instanceId // Speichere die Instanz-ID
         this.#assetBaseUrl = assetBaseUrl // Basis-URL zu den in der JSON-Config angegebenen Assets/Foldern
+
+        // Lies die Auto-Rotate-Einstellungen aus den data-Attributen aus
+        this.#autoRotate = container.dataset.camCustomAutoRotate === '1'
+        this.#autoRotateSpeed = parseFloat(container.dataset.camCustomAutoRotateSpeed) || 1.0
+
+        // Hintergrundbild
+        this.#backgroundBlur = parseFloat(container.dataset.backgroundBlur) || 0
 
         const instanceIdLog = ` Instance ${this.#instanceId} (${this.#container.id})` // Für bessere Logs
         console.log(`[World${instanceIdLog}] Konstruktor gestartet. Debug: ${isDebugMode}`)
@@ -281,6 +293,8 @@ class World {
             // this.#controls.target.set(0, 0.75, 0) // Kann weg
         this.#controls.enableDamping = true
         this.#controls.dampingFactor = 0.05 // Stärke der Dämpfung
+        this.#controls.autoRotate = this.#autoRotate
+        this.#controls.autoRotateSpeed = this.#autoRotateSpeed
 
         // Schränke Kamerarotation im normalen Modus ein, im Debug soll man auch unter die Bodenplatte sehen können
         if (!this.#isDebugMode) {
@@ -875,6 +889,9 @@ class World {
     #updateBackgroundAppearance(instanceIdLogPassed) {
         const instanceIdLog = instanceIdLogPassed || ` Instance ${this.#instanceId} (${this.#container?.id || '?'})`
 
+        // Set blur intensity
+        this.#scene.backgroundBlurriness = this.#backgroundBlur
+
         // Zuerst nur den Farb-Picker verstecken
         if (this.#guiBgColorController) this.#guiBgColorController.hide()
         
@@ -1233,6 +1250,11 @@ class World {
             .onChange(() => {
                 this.#camera.updateProjectionMatrix()
             }).listen()
+
+            // Auto-Rotate (Orbit Controls)
+            const autoRotateFolder = cameraFolder.addFolder('Auto-Rotation')
+            autoRotateFolder.add(this.#controls, 'autoRotate').name('Aktiviert')
+            autoRotateFolder.add(this.#controls, 'autoRotateSpeed', -15, 15, 0.1).name('Geschwindigkeit')
 
             // --- Licht-Regler ---
             if (this.#lights.length > 0) {
