@@ -11,7 +11,7 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 // Diese Funktion baut den korrekten, finalen Pfad zusammen
 
 function createFinalUrl(relativeUrl, baseUrl = '') {
-    console.log('--- CREATE FINAL URLs ---')
+    console.log('--- CREATE FINAL URLs --- --- --- --- ---')
     // Wenn kein relativer Pfad da ist, gibt es nichts zu laden
     if (!relativeUrl) return ''
 
@@ -23,7 +23,10 @@ function createFinalUrl(relativeUrl, baseUrl = '') {
     // Entferne './' vom Anfang, falls vorhanden
     const cleanRelativeUrl = relativeUrl.startsWith('./') ? relativeUrl.substring(2) : relativeUrl
 
-    return baseUrl + cleanRelativeUrl
+    // Stellt sicher, dass die baseUrl mit einem Slash endet, bevor sie kombiniert wird.
+    const safeBaseUrl = baseUrl && !baseUrl.endsWith('/') ? `${baseUrl}/` : baseUrl
+    console.log(`--------------> Asset-Path:  ${safeBaseUrl}${cleanRelativeUrl}`)
+    return safeBaseUrl + cleanRelativeUrl
 }
 
 // Optional: DRACO-Kompression-Loader initialisieren (Nur 1x nötig, ist global)
