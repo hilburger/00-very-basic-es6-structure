@@ -221,7 +221,7 @@ class World {
                 receiveShadow: true, 
                 castShadow: false, 
                 position: { x: 0, y: 0, z: 0 }, 
-                rotation: { x: 0, y: 0, z: 0 }, 
+                rotation: { x: 1.56840734641021, y: 0, z: 0 }, 
                 scale: { x: 1, y: 1, z: 1 }
             }
             console.log(`[World${instanceIdLog}] Keine GroundPlane-Konfiguration in sceneItems gefunden. Default wird verwendet: `, JSON.parse(JSON.stringify(this.#groundPlaneConfig)))
@@ -402,11 +402,13 @@ class World {
                     case 'AmbientLight':
                         light = new AmbientLight(color, intensity)
                         light.name = lightConfig.name || `ConfigAmbientLight_${this.#lights.length}`
+                        light.userData.lightType = 'AmbientLight'
                         // AmbientLight hat keinen Standard-Helper
                         break
                     case 'DirectionalLight':
                         light = new DirectionalLight(color, intensity)
                         light.name = lightConfig.name || `ConfigDirectionalLight_${this.#lights.length}`
+                        light.userData.lightType = 'DirectionalLight'
                         if (lightConfig.position) {
                             light.position.set(
                                 lightConfig.position.x || 0, 
@@ -497,6 +499,7 @@ class World {
                             lightConfig.decay !== undefined ? lightConfig.decay : 2
                         )
                         light.name = lightConfig.name || `ConfigPointLight_${this.#lights.length}`
+                        light.userData.lightType = 'PointLight'
                         if (lightConfig.position) {
                             light.position.set(
                                 lightConfig.position.x || 0,
@@ -575,6 +578,15 @@ class World {
             defaultLightsArray.forEach((defaultLight, index) => {
                 
                 let light = defaultLight // Arbeite mit der Kopie/Instanz
+
+                if (light.isDirectionalLight) {
+                    light.userData.lightType = 'DirectionalLight'
+                } else if (light.isAmbientLight) {
+                    light.userData.lightType = 'AmbientLight'
+                } else if (light.isPointLight) {
+                    light.userData.lightType = 'PointLight'
+                }
+
                 let helper = null
                 // Namen setzen, falls vorhanden
                 if (!light.name) {
@@ -1681,8 +1693,18 @@ class World {
                     // 2. Licht-Konfiguration sammeln
                     const exportedLightSettings = []
                     this.#lights.forEach((light, index) => {
+
+                        let lightType = 'Unknown'
+                        if (light.isDirectionalLight) {
+                            lightType = 'DirectionalLight'
+                        } else if (light.isAmbientLight) {
+                            lightType = 'AmbientLight'
+                        } else if (light.isPointLight) {
+                            lightType = 'PointLight'
+                        } // Hier bei Bedarf weitere Lichttypen (z.B. SpotLight) ergänzen
+
                         const lightConfig = {
-                            type: light.constructor.name, // Gibt z.B. "AmbientLight", "DirectionalLight"
+                            type: light.userData.lightType || 'Unknown',
                             name: light.name || `${light.constructor.name}_Exported_${index}`,
                             color: `#${light.color.getHexString()}`, 
                             intensity: parseFloat(light.intensity.toFixed(2)), // Mit 2 Nachkommastellen
