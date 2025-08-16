@@ -1,5 +1,5 @@
 // src/World/World.js 
-// Timestamp: 15:58
+// Timestamp: 15:21
 
 // THREE Kern-Klassen, die wir direkt instanziieren werden:
 import { 
@@ -42,6 +42,206 @@ import { Plane } from './components/Plane.js' // Plane-Klasse für Bodenplatte
 // Wir importieren sie hier oben, damit sie verfügbar sind
 import Stats from 'stats.js' // Für Performance-Statistiken
 import { GUI } from 'lil-gui'
+
+// Glassmaterial-Import
+import { getCachedGlassMaterial, clearMaterialCache, GLASS_PRESETS } from './components/GlassMaterial.js'
+
+// ============= MATERIAL SYSTEM HELPERS =============
+
+/**
+ * Normalisiert die Item-Konfiguration in eine einheitliche Struktur
+ * Macht aus verschidenen Config-Formaten ein konsistentes Format
+ */
+function normalizeItemConfig(item) {
+    // Deep Clone um Original nicht zu verändern
+    const normalized = JSON.parse(JSON.stringify(item))
+
+    // Transform-Block normalisieren (position, rotation, scale)
+    normalized.transform = normalized.transform || {}
+    normalized.transform.position = normalized.transform.position || item.position || { x: 0, y: 0, z: 0 }
+    normalized.transform.rotation = normalized.transform.rotation || item.rotation || { x: 0, y: 0, z: 0 }
+    normalized.transform.scale = normalized.transform.scale || item.scale || { x: 1, y: 1, z: 1}
+
+    // Shadow-Block normalisieren
+    normalized.shadows = normalized.shadows || {}
+    normalized.shadows.cast = item.castShadow !== undefined ? item.castShadow : true
+    normalized.shadows.receive = item.receiveShadow !== undefined ? item.receiveShadow : true
+
+    // Material-Block normalisieren (falls nicht vorhanden oder alte Properties da sind)
+    if (!normalized.material) {
+        // Prüfe ob alte flache Material-Properties vorhanden sind
+        const legacyMaterialProps = ['materialType', 'roughness', 'metalness', 'transmission', 'ior']
+        const hasLegacyProps = legacyMaterialProps.some(prop => item[prop] !== undefined)
+
+        if (hasLegacyProps) {
+            // Konvertiere alte flache Struktur in neue verschachtelte
+            normalized.material = {
+                type: item.materialType || 'standard',
+                params: {}
+            }
+
+            // Sammle alle Material-Parameter
+            const paramKeys = ['color', 'roughness', 'metalness', 'opacity', 'transmission', 'thickness', 'ior', 'attenuationColor', 'attenuationDistance']
+            paramKeys.forEach(key => {
+                if (item[key] !== undefined) {
+                    normalized.material.params[key] = item[key]
+                }
+            })
+        }
+    }
+
+    return normalized
+}
+
+/**
+ * Prüft ob ein Mesh-Name zu einem Pattern passt
+ * Unterstützt * als Wildcard am Ende
+ * @example nameMatches("Glass_Panel_01", "Glass_Panel_*") => true
+ */
+function nameMatches(meshName, pattern) {
+    if (!pattern || !meshName) return false
+
+    // Wildcard am Ende?
+    if (pattern.endsWith('*')) {
+        return meshName.startsWith(pattern.slice(0, -1))
+    }
+
+    // Exakter Match
+    return meshName === pattern
+}
+
+/**
+ * Erstellt ein Material basierend auf der Konfiguration
+ * Kann später um weitere Material-Typen erweitert werden
+ */
+function buildMaterialFromConfig(matConfig, envMap, envMapIntensity = 1) {
+    if (!matConfig) return null
+
+    const type = matConfig.type
+
+    // Füge envMapIntensity zu den Parametern hinzu
+    const params = {
+        ...(matConfig.params || {}),
+        envMapIntensity
+    }
+
+    switch (type) {
+        case 'glass':
+            // Nutze die gecachte Version
+            return getCachedGlassMaterial({
+                type: 'glass',
+                preset: matConfig.preset,
+                params: params
+            }, envMap)
+
+        // Hier später weitere Material-Typen ergänzen
+        // case 'metal':
+        //     return createMetalMaterial(params, envMap)
+        // case 'plastic':
+        //     return createPlasticMaterial(params, envMap)
+
+        default: 
+            console.log(`Material-Typ '${type}' ist nicht implementiert`)
+            return null
+    }
+}
+
+/**
+ * Wendet ein Material auf ein 3D-Objekt und seine Kinder an
+ * Unterstützt verschiedene Apply-Modi und Mesh-spezifishe Regeln
+ */
+function applyMaterialToObject3D(object3D, matConfig, envMap, envMapIntensity, instanceId) {
+    if (!matConfig || !object3D) return
+
+    // Hier Code einfügen...
+    const instanceIdLog = instanceId ? ` Instance ${instanceId}` : ''
+    const applyMode = matConfig.apply || 'replace'
+
+    console.log(`[World${instanceIdLog}] Wende Material an auf '${object3D.name}', Modus: ${applyMode}`)
+
+    // Speichere Original-Materialien beim ersten Mal
+    let materialStored = false
+    object3D.traverse(child => {
+        if (child.isMesh && !child.userData.originalMaterial) {
+            child.userData.originalMaterial = child.material
+            materialStored = true
+        }
+    })
+
+    if (materialStored) {
+        console.log(`[World${instanceIdLog}] Original-Materialien gespeichert für spätere Wiederherstellung`)
+    }
+
+    // Option 1: Mesh-spezifische Regeln (byMesh)
+    if (Array.isArray(matConfig.byMesh) && matConfig.byMesh.length > 0) {
+        console.log(`[World${instanceIdLog}] Verwende mesh-spezifische Material-Regeln`)
+
+        object3D.traverse(child => {
+            if (!child.isMesh) return
+
+            // Finde passende Regel für dieses Mesh
+            const rule = matConfig.byMesh.find(r => nameMatches(child.name, r.name))
+            if (!rule) return
+
+            console.log(`[World${instanceIdLog}] Mesh '${child.name}' matched Regel '${rule.name}'`)
+
+            // Erstelle Material für diese spezifische Regel
+            const material = buildMaterialFromConfig(rule, envMap, envMapIntensity)
+            if (material) {
+                child.material = material
+                child.userData.hasCustomMaterial = true
+                child.userData.customMaterialType = rule.type
+            }
+        })
+        return
+    }
+    
+    // Option 2: Include/Exclude Listen
+    const includeMeshes = matConfig.includeMeshes || []
+    const excludeMeshes = matConfig.excludeMeshes || []
+
+    // Option 3: Globales Material für alle Meshes
+    const material = buildMaterialFromConfig(matConfig, envMap, envMapIntensity)
+    if (!material) {
+        console.warn(`[World${instanceIdLog}] Konnte Material nicht erstellen`)
+        return
+    }
+
+    let appliedCount = 0
+    object3D.traverse(child => {
+        if (!child.isMesh) return
+
+        // Prüfe Include/Exclude
+        let shouldApply = true
+
+        if (includeMeshes.length > 0) {
+            // Nur spezifisch genannte Meshes
+            shouldApply = includeMeshes.some(pattern => nameMatches(child.name, pattern))
+        } else if (excludeMeshes.length > 0) {
+            // Alle außer den ausgeschlossenen
+            shouldApply = !excludeMeshes.some(pattern => nameMatches(child.name, pattern))
+        }
+
+        if (!shouldApply) return
+
+        // Wende Material an
+        if (applyMode === 'replace') {
+            child.material = material
+            appliedCount++
+        } else if (applyMode === 'override' && child.material) {
+            // Override nur bestimmte Properties
+            Object.assign(child.material, material)
+            child.material.needsUpdate = true
+            appliedCount++
+        }
+
+        child.userData.hasCustomMaterial = true
+        child.userData.customMaterialType = matConfig.type
+    })
+
+    console.log(`[World${instanceIdLog}] Material auf ${appliedCount} Meshes angewendet`)
+}
+
 
 // Globale Variablen für geteilte GUI (bleibt außerhalb der Klasse)
 let sharedGui = null
@@ -1204,29 +1404,6 @@ class World {
                 this.#updateBackgroundAppearance(instanceIdLog)
             }
 
-            // // Hintergrundfarbe (Instanz-spezifisch)
-            // // Nutzt this.#scene
-            // // Dieser Regler wird die Environment Map als Hintergrund überschreiben, wenn sie aktiv ist. 
-            // // Wir könnten dies später mit einem Umschalter verbessern. 
-            // let currentBgValue;
-            // if (this.#scene.background && this.#scene.background.isColor) {
-            //     currentBgValue = `#${this.#scene.background.getHexString()}`
-            // } else {
-            //     // Wenn Hintergrund Textur oder null, starte mit einer Default-Farbe für den Regler
-            //     currentBgValue = '#222233' // Entpricht dem Fallback-Hintergrund
-            // }
-            // const bgColor = { color: currentBgValue}
-
-            // this.#gui.addColor(bgColor, 'color').name('Hintergrundfarbe').onChange(value => {
-            //     // Wenn der Benutzer die Farbe ändert, setzen wir immer eine Farbe. 
-            //     // Die Environment Map als Hintergrund wird dadurch ggf. entfernt oder überschrieben. 
-            //     if (this.#scene.background && this.#scene.background.isTexture) {
-            //         // this.background.dispose( // Nicht disposen, wenn es eine EnvMap ist!
-            //     }
-            //     this.#scene.background = new Color(value)
-            // })
-
-
             // Umgebungslicht (Instanz-spezifisch)
             // Nutzt this.#lights
                 // Wir brauchen eine Referenz auf das Licht. Besser wäre Lichter zu verwalten.
@@ -1666,6 +1843,85 @@ class World {
             }
             // --- ENDE GUI Bodenplatte ---
 
+            // --- Glasmaterial-Steuerung ---
+            const customMaterialsFolder = this.#gui.addFolder('Custom Materials')
+            customMaterialsFolder.close()
+
+            // Finde alle Objekte mit Custom Material
+            const meshesWithCustomMaterial = []
+            this.#scene.traverse(child => {
+                if (child.isMesh && child.userData.hasCustomMaterial) {
+                    meshesWithCustomMaterial.push(child)
+                }
+            })
+
+            if (meshesWithCustomMaterial.length > 0) {
+                console.log(`[World${instanceIdLog}] ${meshesWithCustomMaterial.length} Meshes mit Custom Material gefunden`)
+
+                // Gruppiere nach Material-Typ
+                const glassMeshes = meshesWithCustomMaterial.filter(m => m.userData.customMaterialType === 'glass')
+
+                if (glassMeshes.length > 0) {
+                    const glassFolder = customMaterialsFolder.addFolder(`Glas (${glassMeshes.length} Meshes)`)
+
+                    // Wenn alle das gleiche Material teilen (Cache), nur einen Controller
+                    const uniqueMaterials = new Set(glassMeshes.map(m => m.material))
+
+                    if (uniqueMaterials.size === 1 ) {
+                        // Alle teilen das gleiche Material
+                        const sharedMaterial = glassMeshes[0].material
+                        const matFolder = glassFolder.addFolder('Gemeinsames Material')
+
+                        // Farbe
+                        const colorProxy = { color: `#${sharedMaterial.color.getHexString()}` }
+                        matFolder.addColor(colorProxy, 'color')
+                            .name('Tönung')
+                            .onChange(value => {
+                                sharedMaterial.color.set(value)
+                            })
+
+                        // Basis-Parameter
+                        matFolder.add(sharedMaterial, 'roughness', 0, 1, 0.01).name('Rauheit')
+                        matFolder.add(sharedMaterial, 'transmission', 0, 1, 0.01).name('Transmission')
+                        matFolder.add(sharedMaterial, 'thickness', 0, 5, 0.1).name('Dicke')
+                        matFolder.add(sharedMaterial, 'ior', 1, 2.5, 0.01).name('Brechungsindex')
+                        matFolder.add(sharedMaterial, 'opacity', 0, 1, 0.01).name('Opazität')
+
+                        // Erweiterte Parameter
+                        const advancedFolder = matFolder.addFolder('Erweitert')
+                        advancedFolder.add(sharedMaterial, 'clearcoat', 0, 1, 0.01).name('Klarlack')
+                        advancedFolder.add(sharedMaterial, 'clearcoatRoughness', 0, 1, 0.01).name('Klarlack-Rauheit')
+                        advancedFolder.add(sharedMaterial, 'envMapIntensity', 0, 3, 0.1).name('Env-Map Stärke')
+                        advancedFolder.close()
+
+                        // Reset-Funktion
+                        const actions = {
+                            resetToOriginal: () => {
+                                glassMeshes.forEach(mesh => {
+                                    if (mesh.userData.originalMaterial) {
+                                        mesh.material = mesh.userData.originalMaterial
+                                        mesh.userData.hasCustomMaterial = false
+                                        console.log(`[World${instanceIdLog}] Material zurückgesetzt für ${glassMeshes.length} Meshes`)
+                                    }
+                                })
+                                // GUI-Ordner entfernen/aktualisieren würde hier folgen
+                            }
+                        }
+                        matFolder.add(actions, 'resetToOriginal').name('⚠️  Original wiederherstellen')
+                    } else {
+                        // Verschiedene Materialien - Liste einzeln
+                        glassMeshes.forEach(mesh => {
+                            const meshFolder = glassFolder.addFolder(mesh.name || mesh.uuid.substring(0, 8))
+                            // Hier kann man die gleichen Controls für jedes Material einzeln hinzufügen
+                            meshFolder.close()
+                        })
+                    }
+                } 
+            } else {
+                customMaterialsFolder.add({ info: 'Keine' }, 'info').name('Custom Materials').disable()
+            }
+            // --- ENDE Glasmaterial-Steuerung ---
+
             // --- Export Button ---
             const exportSettings = {
                 exportFullConfig: () => {
@@ -1794,31 +2050,75 @@ class World {
                     // aber die spezielle Bodenplatte durch ihre aktuelle Konfiguration ersetzen
                     // oder hinzufügen, falls sie in den Original-Items nicht explizit als steuerbare Plane drin war. 
 
-                    let finalSceneItems = []
+                    const exportedSceneItems = []
+
+                    this.#originalSceneItemConfigs.forEach(originalItem => {
+                        const exportItem = { ...originalItem }
+
+                        // Finde das geladene Objekt in der Szene
+                        const sceneObject = this.#scene.getObjectByName(originalItem.name)
+
+                        if (sceneObject) {
+                            // Prüfe auf Custom Materials
+                            let customMaterialConfig = null
+
+                            sceneObject.traverse(child => {
+                                if (child.isMesh && child.userData.hasCustomMaterial && !customMaterialConfig) {
+                                    const mat = child.material
+
+                                    if (child.userData.customMaterialType === 'glass' && mat.isMeshPhysicalMaterial) {
+                                        customMaterialConfig = {
+                                            type: 'glass',
+                                            params: {
+                                                color: `${mat.color.getHexString()}`,
+                                                roughness: parseFloat(mat.roughness.toFixed(3)),
+                                                transmission: parseFloat(mat.transmission.toFixed(3)),
+                                                thickness: parseFloat(mat.thickness.toFixed(3)),
+                                                ior: parseFloat(mat.ior.toFixed(3)),
+                                                opacity: parseFloat(mat.opacity.toFixed(3))
+                                            }
+                                        }
+
+                                        // Erweiterte Parameter NUR, wenn != default
+                                        if (mat.clearcoat > 0) {
+                                            customMaterialConfig.params.clearcoat = parseFloat(mat.clearcoat.toFixed(3))
+                                            customMaterialConfig.params.clearcoatRoughness = parseFloat(mat.clearcoatRoughness.toFixed(3))
+                                        }
+                                        if (mat.attenuationDistance > 0) {
+                                            customMaterialConfig.params.attenuationColor = `#${mat.attenuationColor.getHexString()}`
+                                            customMaterialConfig.params.attenuationDistance = parseFloat(mat.attenuationDistance.toFixed(3))
+                                        }
+                                    }
+                                }
+                            })
+
+                            if (customMaterialConfig) {
+                                exportItem.material = customMaterialConfig
+                            }
+                        }
+
+                        exportedSceneItems.push(exportItem)
+                    })
+
+                    // Bodenplatte-Logik
                     let groundPlaneConfigInOriginal = false
-                    this.#originalSceneItemConfigs.forEach(item => {
-                        if (item.type === 'plane' && item.name ===this.#groundPlaneConfig.name) {
+                    const finalSceneItems = []
+
+                    exportedSceneItems.forEach(item => {
+                        if (item.type === 'plane' && item.name === this.#groundPlaneConfig.name) {
                             // Dies ist die ursprüngliche Konfiguration der steuerbaren Bodenplatte.
                             // Wir ersetzen sie durch die aktuelle Konfiguration.
                             finalSceneItems.push(exportedGroundPlaneConfig)
                             groundPlaneConfigInOriginal = true
                         } else {
-                            // Behalte andere Original-Items bei
+                            // Behalte andere Items bei (inkl. Custom Materials)
                             finalSceneItems.push(item)
                         }
                     })
 
-                    if (!groundPlaneConfigInOriginal && this.#groundPlaneConfig.shape !== 'none') {
-                        // Wenn die steuerbare Bodenplatte nicht in den originalen Items war 
-                        // (z.B. weil sie als Default erstellt wurde) und sie sichtbar ist, füge sie hinzu. 
-                        // Wenn shape 'none' ist, aber ursprünglich keine Plane da war, fügen wie sie sie auch nicht als 'none' hinzu, 
-                        // es sei denn, das ist gewünscht. Für einen sauberen Export der den aktuellen Zustand widerspiegelt, 
-                        // wäre es besser, auch 'shape: none' zu exportieren, wenn die config so ist. 
-                        finalSceneItems.push(exportedGroundPlaneConfig) // Fügt auch 'shape: none' hinzu, was korrekt ist.
+                    if (!groundPlaneConfigInOriginal ?? this.#groundPlaneConfig.shape !== 'none') {
+                        finalSceneItems.push(exportedGroundPlaneConfig)
                     } else if (!groundPlaneConfigInOriginal && this.#groundPlaneConfig.shape === 'none') {
-                        // Wenn die Default-Plane 'none' ist und nie eine andere Plane konfiguriert wurde, 
-                        // könnten wir hier hier entcheiden, kein Plane-Item zu exportieren oder eines mit shape: 'none'.
-                        // Für Konsistenz: 
                         finalSceneItems.push(exportedGroundPlaneConfig)
                     }
 
@@ -1874,6 +2174,7 @@ class World {
                     }
                 } // Ende von exportFullConfig
             } // Ende von exportSettings
+
             console.log('--------------------------------', this.#gui)
             const exportSettingsButton = this.#gui.add(exportSettings, 'exportFullConfig').name('Export Gesamt-Config')
             exportSettingsButton._label = 'Export Gesamt-Config'
@@ -2059,58 +2360,51 @@ class World {
 
                 // Wenn ein Objekt erfolgreich geladen/erstellt wurde
                 if (loadedObject) {
-                    // Allgemeine Konfiguration anwenden (Name, Position, Rotation, Skalierung, Schatten)
-                    // Namen wurden oben schon gesetzt
-                        // if (itemConfig.name) loadedObject.name = itemConfig.name
 
-                    // Setze Position (falls in Config definiert)
-                    if (itemConfig.position) {
-                        loadedObject.position.set(
-                            itemConfig.position.x || 0, 
-                            itemConfig.position.y || 0, 
-                            itemConfig.position.z || 0
-                        )
-                    }
+                    // Normalisiere die Konfiguration für einheitliche Verarbeitung
+                    const normalizedConfig = normalizeItemConfig(itemConfig)
 
-                    // Rotation nur setzen, wenn nicht in der Komponente selbst gesetzt (wie bei Plane)
-                    if (itemConfig.rotation) {
-                        if (itemConfig !== 'plane' || itemConfig.rotation.x !== undefined) {
-                            loadedObject.rotation.set(
-                                itemConfig.rotation.x || 0, 
-                                itemConfig.rotation.y || 0, 
-                                itemConfig.rotation.z || 0
-                            )
-                        }
-                    } else if (itemConfig.type !== 'plane') {
-                        loadedObject.rotation.set(0, 0, 0)
-                    }
+                    // Transform anwenden
+                    loadedObject.position.set(
+                        normalizedConfig.transform.position.x,
+                        normalizedConfig.transform.position.y,
+                        normalizedConfig.transform.position.z
+                    )
 
-                    // Setze Skalierung (falls in Config definiert
-                    // Nutze standardwert 1, falls nichts angegeben
-                    const scaleX = itemConfig.scale?.x ?? 1
-                    const scaleY = itemConfig.scale?.y ?? 1
-                    const scaleZ = itemConfig.scale?.z ?? 1
-                    loadedObject.scale.set(scaleX, scaleY, scaleZ)
+                    loadedObject.rotation.set(
+                        normalizedConfig.transform.rotation.x,
+                        normalizedConfig.transform.rotation.y,
+                        normalizedConfig.transform.rotation.z
+                    )
 
-                    // --- Schatten: castShadow und receiveShadow aus COnfig auf Objekt und Kinder anwenden ---
-                    const castShadowConfig = itemConfig.castShadow !== undefined ? itemConfig.castShadow : true // Default: true
-                    const receiveShadowConfig = itemConfig.receiveShadow !== undefined ? itemConfig.receiveShadow : true // Default
+                    loadedObject.scale.set(
+                        normalizedConfig.transform.scale.x,
+                        normalizedConfig.transform.scale.y,
+                        normalizedConfig.transform.scale.z
+                    )
 
-                    // Setze die Eigenschaften auf dem Haupt-Objekt
-                    loadedObject.castShadow = castShadowConfig
-                    loadedObject.receiveShadow = receiveShadowConfig
-
-                    // Durchlaufe alle Kind-Objekte (insbesondere Meshes bei GLTF)
+                    // Schatten konfigurieren
                     loadedObject.traverse(child => {
                         if (child.isMesh) {
-                            child.castShadow = castShadowConfig
-                            child.receiveShadow = receiveShadowConfig
-                            // Wichtig: Wenn ein Material eine Textur hat, die Alüha-Kanäle verwendet, 
-                            // kann shadow.alphaToCoverage oder shadow.transparent = true nötig sein.
-                            // Depending on the material Setup. Für einfach Fälle reicht dies hier aber.
+                            child.castShadow = normalizedConfig.shadows.cast
+                            child.receiveShadow = normalizedConfig.shadows.receive
                         }
                     })
-                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' Schatten-Properties gesetzt: castShadow=${loadedObject.castShadow}, receiveShadow=${loadedObject.receiveShadow}`)
+
+                    console.log(`[World${instanceIdLog}] Objekt '${loadedObject.name}' Schatten cast=${normalizedConfig.shadows.cast}, receive=${normalizedConfig.shadows.receive}`)
+
+                    // Material anwenden, falls konfiguriert
+                    if (normalizedConfig.material) {
+                        console.log(`[World${instanceIdLog}] Material-Konfiguration gefunden für '${loadedObject.name}'`)
+
+                        applyMaterialToObject3D(
+                            loadedObject,
+                            normalizedConfig.material,
+                            this.#environmentMapProcessed, // Die geladene Environment Map
+                            this.#environmentMapIntensity, // Die konfigurierte Intensität
+                            this.#instanceId // Fürs Logging
+                        )
+                    }
                     
                     // --- WICHTIG: Füge zur Instanz-Szene und Instanz-Clickables hinzu ---
                     this.#scene.add(loadedObject)
