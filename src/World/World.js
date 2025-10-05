@@ -1252,7 +1252,7 @@ class World {
         this.#stats = new Stats()
         this.#stats.dom.style.position = 'absolute' // Positioniere
         this.#stats.dom.style.left = 'auto' // rechts ausrichten
-        this.#stats.dom.style.right = '0px'
+        this.#stats.dom.style.left = '0px'
         this.#stats.dom.style.top = '0px'
         this.#stats.dom.style.zIndex = '100' // Über dem Canvas
         this.#container.appendChild(this.#stats.dom) // Füge zum spezifischen COntainer hinzu
