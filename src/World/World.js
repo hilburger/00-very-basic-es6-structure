@@ -25,6 +25,7 @@ import { createLights as createDefaultLights} from './components/lights.js' // A
 // System-Klassen
 import { Resizer } from './systems/Resizer.js'
 import { Loop } from './systems/Loop.js'
+import { focalLengthToFov } from './systems/cameraUtils.js'
 
 // Importiere OrbitControls aus dem 'examples'-Verzeichnis von Three.js
 // Vite/npm kümmert sich darum, den richtigen Pfad aufzulösen
@@ -325,9 +326,18 @@ class World {
         this.#rendererShadowMapTypeFromConfig = rendererConf.type // Könnte eine Zahl oder undefined sein
 
         const cameraConf = mainConfig?.cameraConfig || {}
+        let fovFromConfig = cameraConf.fov || 58 // Standard FOV
+
+        // Prüfe, ob eine Brennweite (focalLength) in der Config angegeben ist. 
+        // Wenn ja, berechne das FOV daraus und überschreibe den FOV-Wert.
+        if (cameraConf.focalLength && typeof cameraConf.focalLength === 'number' && cameraConf.focalLength > 0) {
+            fovFromConfig = focalLengthToFov(cameraConf.focalLength)
+            console.log(`[World${instanceIdLog}] Brennweite ${cameraConf.focalLength}mm erkannt. FOV wird auf ${fovFromConfig.toFixed(2)}° gesetzt.`)
+        }
+
         // Camera-spezifische Einstellungen aus mainConfig extrahieren (oder Defaults verwenden)
         this.#cameraSettings = {
-            fov: cameraConf.fov || 58, // STandard FOV, falls nicht in Config
+            fov: fovFromConfig, // FOV aus Config bestimmen, dort wird ggf. der Defaultwert zugewiesen
             near: cameraConf.near || 0.1, 
             far: cameraConf.far || 100, 
             framingPadding: cameraConf.framingPadding || 1.5, 
