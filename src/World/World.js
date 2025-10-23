@@ -25,7 +25,7 @@ import { createLights as createDefaultLights} from './components/lights.js' // A
 // System-Klassen
 import { Resizer } from './systems/Resizer.js'
 import { Loop } from './systems/Loop.js'
-import { focalLengthToFov } from './systems/cameraUtils.js'
+import { focalLengthToFov, fovToFocalLength } from './systems/cameraUtils.js'
 
 // Importiere OrbitControls aus dem 'examples'-Verzeichnis von Three.js
 // Vite/npm kümmert sich darum, den richtigen Pfad aufzulösen
@@ -276,7 +276,8 @@ class World {
     #loadingProgressBarElement
 
     #cameraSettings = {}
-    #lightSettingsFromConfig = [] // SPeichert Lichter aus der Config
+    #cameraGuiProxy = {} // Proxy-Objekt für die Kamera-GUI
+    #lightSettingsFromConfig = [] // Speichert Lichter aus der Config
 
     // Environment Map Variablen
     #environmentMapUrl // URL aus der Config
@@ -326,13 +327,15 @@ class World {
         this.#rendererShadowMapTypeFromConfig = rendererConf.type // Könnte eine Zahl oder undefined sein
 
         const cameraConf = mainConfig?.cameraConfig || {}
+        this.#cameraSettings.usedFocalLength = false // Flag für den Export
         let fovFromConfig = cameraConf.fov || 58 // Standard FOV
 
         // Prüfe, ob eine Brennweite (focalLength) in der Config angegeben ist. 
         // Wenn ja, berechne das FOV daraus und überschreibe den FOV-Wert.
         if (cameraConf.focalLength && typeof cameraConf.focalLength === 'number' && cameraConf.focalLength > 0) {
             fovFromConfig = focalLengthToFov(cameraConf.focalLength)
-            console.log(`[World${instanceIdLog}] Brennweite ${cameraConf.focalLength}mm erkannt. FOV wird auf ${fovFromConfig.toFixed(2)}° gesetzt.`)
+            console.log(`[World${instanceIdLog}] 🎥 Brennweite ${cameraConf.focalLength}mm erkannt. FOV wird auf ${fovFromConfig.toFixed(2)}° gesetzt.`)
+            this.#cameraSettings.usedFocalLength = true
         }
 
         // Camera-spezifische Einstellungen aus mainConfig extrahieren (oder Defaults verwenden)
@@ -1445,10 +1448,33 @@ class World {
             camTargetFolder.close()
 
             // FOV
+            // cameraFolder.add(this.#camera, 'fov', 1, 179, 1).name('FOV (Grad)')
+            // .onChange(() => {
+            //     this.#camera.updateProjectionMatrix()
+            // }).listen()
+
+            // Proxy-Objekt für die GUI um FOV und Brennweite zu synchonisieren
+            this.#cameraGuiProxy = {
+                focalLength: fovToFocalLength(this.#camera.fov)
+            }
+
+            // Brennweiten-Regler
+            cameraFolder.add(this.#cameraGuiProxy, 'focalLength', 10, 200, 1)
+                .name('Brennweite (mm)')
+                .listen()
+                .onChange(value => {
+                    this.#camera.fov = focalLengthToFov(value)
+                    this.#camera.updateProjectionMatrix()
+                })
+
+            // FOV-Regler
             cameraFolder.add(this.#camera, 'fov', 1, 179, 1).name('FOV (Grad)')
+            .listen()
             .onChange(() => {
+                // Aktualisiere den Brennweiten-Proxy, wenn FOV geändert wird
+                this.#cameraGuiProxy.focalLenght = fovToFocalLength(this.#camera.fov)
                 this.#camera.updateProjectionMatrix()
-            }).listen()
+            })
 
             // Auto-Rotate (Orbit Controls)
             const autoRotateFolder = cameraFolder.addFolder('Auto-Rotation')
