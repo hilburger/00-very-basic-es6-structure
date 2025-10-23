@@ -1,3 +1,4 @@
+// Timestamp 16:39
 import {Clock } from 'three'
 
 // Erstellt eine Three.js Uhr - praktisch zur Messung von Zeitunterschieden (Delta Time)
@@ -37,6 +38,21 @@ class Loop {
         // Holt die Zeit, die seit dem letzten Aufruf von getDelta() vergangen ist (in Sekunden)
         // Wichtig für zeitbasierte Animationen, die auf allen Geräten gleich schnell laufen sollen
         const delta = clock.getDelta()
+
+        // *** NEUER LOG HINZUFÜGEN ***
+        // Gib den Wert direkt vor dem Rendern aus, um zu sehen, ob er "kleben" bleibt
+        // Du kannst auch this.renderer.id loggen, um sicherzustellen, dass es derselbe Renderer ist.
+        // if (this.renderer) { // Sicherstellen, dass der Renderer existiert
+        //     console.log('Loop.tick() - Renderer Objekt:')
+        //     console.log(this.renderer)
+
+        //     console.log(`Loop.tick() - Renderer keys:`, Object.keys(this.renderer))
+        //     console.log(`Loop.tick() - Renderer hasOwnProperty('id'): ` + this.renderer.hasOwnProperty('id'))
+
+        //     console.log('Loop.tick() - Renderer ID: ' + (this.renderer ? this.renderer.id : 'renderer_is_undefined') + ' - shadowMap.enabled: ' + (this.renderer.shadowMap ? this.renderer.shadowMap.enabled : 'shadowMap_is_undefined'))
+        // }
+        // *** ENDE NEUER LOG ***
+
 
         // Geht durch alle Objekte im `updatables`-Array
         for (const object of this.updatables) {
