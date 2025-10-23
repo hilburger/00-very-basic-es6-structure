@@ -2,3 +2,15 @@
 .vscode/
 
 node_modules/
+
+src/World/.DS_Store
+
+dist/.DS_Store
+
+.DS_Store
+
+dist/
+
+z_depot/
+
+public/models/BHouseComplete_00/

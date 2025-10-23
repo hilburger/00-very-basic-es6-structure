@@ -1,34 +1,428 @@
 <!DOCTYPE html>
 <html lang="de">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dummy Three.js-ES6-Projekt</title>
-    <link rel="stylesheet" href="./styles/main.css">
-</head>
-
-<body>
-    <h1>Three.js Dummy-ES6-Projekt</h1>
-
-    <p>Hier unten siehst du eine interaktive 3D-Szene, eingebettet in normalen Web-Inhalt. Du kannst das Objekt mit der Maus drehen.</p>
-
-    <div class="grid-container">
-        <div id="scene-container" class="grid-item"></div>
-
-        <div class="grid-item">
-            <h3>Infos</h3>
-            <h4>Text neben der 3D-Szene</h4>
-            <p>Hier sieht man, wie es wirkt 3D im Content wie ein Bild zu sehen.</p>
-            <p>Links ist eine interaktive 3D-Szene, die mit Three.js erstellt wurde. Du kannst sie mit der Maus drehen.</p>
-            <p>Versuch es einfach!</p>
-        </div>
-        
-    </div>
+    <title>Ihre 3D Visionen | Interaktive Präsentation</title>
     
-    <p>Und wieder text unterhalb des 3D-Canvas.</p>
+    <link rel="stylesheet" href="./styles/main.css">
+    <!-- Google Fonts für eine elegante Schriftart -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400&display=swap" rel="stylesheet">
 
+    <style>
+        .threejs-viewer-container {
+            margin: 0;
+        }
+        /* Kein CSS-Framework, nur das Nötigste für das puristische Erlebnis */
+        :root {
+            --text-color: #ffffff;
+            --background-color: #111111;
+            --overlay-background: rgba(0, 0, 0, 0.85);
+            --transition-speed: 0.8s;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Verhindert Scrollbalken */
+            background-color: var(--background-color);
+            font-family: 'Poppins', sans-serif;
+            color: var(--text-color);
+        }
+
+        .threejs-viewer-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: grab; /* Zeigt an, dass das Objekt beweglich ist */
+
+            background: linear-gradient(
+                to bottom,
+                #2c5f8d 0%,      /* Dunkles Blau oben */
+                #4a90e2 25%,     /* Übergang zu hellerem Blau */
+                #66b5d6 50%,     /* Mittleres Hellblau */
+                #87ceeb 75%,     /* Himmelblau */
+                #a8d5e8 100%     /* Sehr helles Blau unten */
+            );
+            transition: background 0.5s ease-in-out;
+        }
+        
+        .threejs-viewer-container:active {
+            cursor: grabbing;
+        }
+
+        /* --- Text-Overlay --- */
+        .text-overlay {
+            position: absolute;
+            bottom: 30px; /* Positioniert den Text unten */
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: clamp(1.2rem, 3vw, 1.5rem); /* Dezente, responsive Schriftgröße */
+            font-weight: 300;
+            text-align: center;
+            pointer-events: none; /* Klicks gehen durch zum 3D-Canvas */
+            white-space: nowrap;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+            opacity: 0.9;
+        }
+        
+        /* --- UI-Elemente --- */
+        .contact-button {
+            position: fixed;
+            top: 30px; /* Positioniert den Button oben rechts */
+            right: 30px;
+            padding: 10px 20px;
+            border: 1px solid var(--text-color);
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            z-index: 10;
+        }
+
+        .contact-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* --- Kontakt-Overlay --- */
+        .contact-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--overlay-background);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity var(--transition-speed) ease, visibility 0s var(--transition-speed);
+            z-index: 100;
+        }
+
+        .contact-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+            transition-delay: 0s;
+        }
+        
+        .contact-details {
+            text-align: center;
+        }
+
+        .contact-details h2 {
+            font-weight: 400;
+            margin-bottom: 30px;
+        }
+
+        .contact-details a {
+            color: var(--text-color);
+            text-decoration: none;
+            font-size: 1.2rem;
+            display: block;
+            margin: 15px 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .contact-details a:hover {
+            opacity: 0.7;
+        }
+
+        .close-button {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            font-size: 2rem;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+        
+        .close-button:hover {
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Der Container für Ihre Three.js Applikation -->
+    <!-- Die data-config ist für das direkte Laden des realistischen Modells vorbereitet. -->
+    <!-- Passen Sie die Pfade zu Ihren Assets an. -->
+    <div class="threejs-viewer-container" 
+         id="interactive-card" 
+         data-config='{
+            "cameraConfig": {
+                "initialPosition": {
+                "x": -18.807,
+                "y": 3.4,
+                "z": 19.936
+                },
+                "initialLookAt": {
+                "x": 4.528,
+                "y": 3.24,
+                "z": -2.254
+                },
+                "focalLength": 50,
+                "fov": 29,
+                "disableFramingIfInitialSet": true,
+                "framingPadding": 1.5,
+                "near": 0.1,
+                "far": 100
+            },
+            "lightSettings": [
+                {
+                "type": "DirectionalLight",
+                "name": "Main_Sun (For Shadows)",
+                "color": "#FFF5E1",
+                "intensity": 3.0,
+                "castShadow": true,
+                "position": {
+                    "x": -15,
+                    "y": 4,
+                    "z": 4
+                },
+                "targetPosition": { "x": 0, "y": 0, "z": 0 },
+                "shadowParameters": {
+                    "mapSize": 2048,
+                    "cameraNear": 0.5,
+                    "cameraFar": 50,
+                    "bias": -0.001
+                }
+                },
+                {
+                "type": "AmbientLight",
+                "name": "Subtle_Fill (Safety Net)",
+                "color": "#FFFFFF",
+                "intensity": 0.8
+                }
+            ],
+            "environmentMap": {
+                "url": "/models/BHouseComplete_00/environment/spiaggia_di_mondello_1k.hdr",
+                "intensity": 1.2,
+                "rotationY": 1.69
+            },
+            "backgroundSettings": {
+                "color": "#222233",
+                "transparent": true,
+                "useEnvironmentMapAsBackground": false
+            },
+            "rendererConfig": {
+                "shadowMap": {
+                "enabled": true,
+                "type": 2
+                }
+            },
+            "sceneItems": [
+                {
+                "type": "gltf",
+                "name": "BHouseFoundation",
+                "assetUrl": "/models/BHouseComplete_00/BHouseFoundation.gltf",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                },
+                "castShadow": true,
+                "receiveShadow": true,
+                "fileSize": 17211,
+                "lastModified": 1752852110
+                },
+                {
+                "type": "gltf",
+                "name": "BodenDeckeTreppe",
+                "assetUrl": "/models/BHouseComplete_00/BodenDeckeTreppe.gltf",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                },
+                "castShadow": true,
+                "receiveShadow": true,
+                "fileSize": 5742,
+                "lastModified": 1753015292
+                },
+                {
+                "type": "gltf",
+                "name": "Fensterglas",
+                "assetUrl": "/models/BHouseComplete_00/Fensterglas.gltf",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                },
+                "castShadow": true,
+                "receiveShadow": true,
+                "fileSize": 3646,
+                "lastModified": 1753016422,
+                "material": {
+                    "type": "glass",
+                    "preset": "architectural",
+                    "params": {
+                        "color": "#f1f8f6",
+                        "roughness": 0,
+                        "transmission": 0.99,
+                        "thickness": 0.2,
+                        "ior": 1.5,
+                        "opacity": 1,
+                        "clearcoat": 1,
+                        "clearcoatRoughness": 0,
+                        "attenuationColor": "#e0f0e0",
+                        "attenuationDistance": 2
+                    }
+                }
+                },
+                {
+                "type": "gltf",
+                "name": "Innenwände",
+                "assetUrl": "/models/BHouseComplete_00/Innenwände.gltf",
+                "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                },
+                "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                },
+                "castShadow": true,
+                "receiveShadow": true,
+                "fileSize": 20844,
+                "lastModified": 1753014366
+                },
+                {
+                "type": "plane",
+                "name": "GroundPlane_Default",
+                "shape": "circle",
+                "size": {
+                    "width": 10,
+                    "height": 10,
+                    "radius": 50
+                },
+                "segments": 32,
+                "color": "#a0948d",
+                "mapUrl": null,
+                "roughness": 1,
+                "metalness": 0.6,
+                "receiveShadow": true,
+                "castShadow": false,
+                "position": {
+                    "x": 3,
+                    "y": -0.1,
+                    "z": 0
+                },
+                "rotation": {
+                    "x": 1.56840734641021,
+                    "y": 0,
+                    "z": 0
+                },
+                "scale": {
+                    "x": 1,
+                    "y": 1,
+                    "z": 1
+                }
+                }
+            ]
+         }'
+         data-background-blur="0.5" 
+         data-aspect-ratio="16:9" 
+         data-banner-height="" 
+         data-cam-custom-auto-rotate="1" 
+         data-cam-custom-auto-rotate-speed="0.40" 
+         data-scene-items-count="4">
+    </div>
+
+    <!-- Der statische Text -->
+    <div class="text-overlay">
+        <span>Erleben Sie jedes Detail.</span>
+    </div>
+
+    <!-- Der Kontakt-Button -->
+    <div class="contact-button" id="contact-btn">
+        Kontakt
+    </div>
+
+    <!-- Das Kontakt-Overlay -->
+    <div class="contact-overlay" id="contact-overlay">
+        <div class="close-button" id="close-btn">&times;</div>
+        <div class="contact-details">
+            <h2>Lassen Sie uns Ihre Vision verwirklichen.</h2>
+            <p>Ihre Namen</p>
+            <a href="mailto:ihre.email@domain.de">ihre.email@domain.de</a>
+            <a href="tel:+49123456789">+49 123 456 789</a>
+        </div>
+    </div>
+
+    <!-- Das Haupt-Skript Ihrer Three.js-Anwendung -->
     <script type="module" src="./src/main.js"></script>
-</body>
 
+    <!-- UI-Skript nur für das Kontakt-Overlay -->
+    <script>
+        const contactBtn = document.getElementById('contact-btn');
+        const contactOverlay = document.getElementById('contact-overlay');
+        const closeBtn = document.getElementById('close-btn');
+
+        // Kontakt-Overlay Logik
+        contactBtn.addEventListener('click', () => {
+            contactOverlay.classList.add('visible');
+        });
+
+        closeBtn.addEventListener('click', () => {
+            contactOverlay.classList.remove('visible');
+        });
+
+        // Overlay schließen, wenn daneben geklickt wird
+        contactOverlay.addEventListener('click', (event) => {
+            if (event.target === contactOverlay) {
+                contactOverlay.classList.remove('visible');
+            }
+        });
+    </script>
+
+</body>
 </html>
