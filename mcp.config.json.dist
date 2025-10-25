@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+        "context7": {
+            "command": "npx",
+            "args": [
+                "-y", 
+                "@upstash/context7-mcp"
+            ],
+            "env": {
+                "CONTEXT7_API_KEY": "ADD KEY HERE OR DELETE THE LINE"
+            }
+        }
+    },
+    "metadata": {
+        "projectType": "threejs",
+        "lastUpdated": "2025-10-25",
+        "maintainer": "Hilburger Dev Setup"
+    }
+}
