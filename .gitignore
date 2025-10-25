@@ -14,4 +14,16 @@ dist/
 z_depot/
 
 public/models/BHouseComplete_00/
+
+# --- MCP / Windsurf Configs ---
 mcp.config.json
+
+# Alternative: Wenn du die Datei im Projekt behalten willst,
+# aber Keys separat verwaltest, kannst du auch nur die Env-Datei ausschließen:
+# .windsurf/mcp.env
+
+# Windsurf-Projektdaten (lokale Logs, Tempdateien, Cache):
+.windsurf/
+windsurf.log
+windsurf-cache/
+windsurf-temp/
